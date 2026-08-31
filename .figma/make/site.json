@@ -1,0 +1,10 @@
+{
+  "description": "Connects farmers and consumers through a marketplace for live and butchered pigs and chickens, enabling easy ordering via WhatsApp and secure submissions.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
