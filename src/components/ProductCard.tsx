@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "../lib/api";
 import { useAppContext } from "../lib/AppContext";
@@ -19,23 +19,62 @@ export default function ProductCard({ product }: ProductCardProps) {
   const { whatsappNumber } = useAppContext();
   const { addItem } = useCart();
 
+  // ============================================================
+  // PRODUCT VARIANTS
+  // ============================================================
+
   const [variants, setVariants] = useState<ProductVariant[]>([]);
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
   const [variantsLoading, setVariantsLoading] = useState(true);
 
+  // ============================================================
+  // PRODUCT IMAGES
+  // ============================================================
+
   const [images, setImages] = useState<ProductImage[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
-  const [showOrderModal, setShowOrderModal] = useState(false);
+  /*
+   * IMPORTANT:
+   *
+   * The track contains:
+   *
+   * [LAST IMAGE] [IMAGE 1] [IMAGE 2] [IMAGE 3] [FIRST IMAGE]
+   *
+   * This allows us to create a proper infinite sliding carousel.
+   */
+  const [trackIndex, setTrackIndex] = useState(1);
+
+  /*
+   * Controls whether the CSS transition is active.
+   *
+   * We temporarily disable it when jumping from a cloned image
+   * back to the real image.
+   */
+  const [transitionEnabled, setTransitionEnabled] = useState(true);
 
   // ============================================================
-  // LOAD PRODUCT DATA
+  // OTHER STATE
+  // ============================================================
+
+  const [showOrderModal, setShowOrderModal] = useState(false);
+
+  /*
+   * Used for swipe detection.
+   *
+   * Ref is used instead of state because changing the starting
+   * pointer position should NOT cause a React re-render.
+   */
+  const touchStartX = useRef<number | null>(null);
+
+  // ============================================================
+  // LOAD VARIANTS + IMAGES
   // ============================================================
 
   useEffect(() => {
     let cancelled = false;
 
-    const loadProductData = async () => {
+    async function loadProductData() {
       setVariantsLoading(true);
 
       try {
@@ -49,26 +88,36 @@ export default function ProductCard({ product }: ProductCardProps) {
           ),
         ]);
 
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
 
-        // ------------------------------
+        // --------------------------------------------------------
         // SORT VARIANTS
-        // ------------------------------
+        // --------------------------------------------------------
 
         const sortedVariants = [...variantsData].sort(
             (a, b) => a.displayOrder - b.displayOrder
         );
 
-        // ------------------------------
+        // --------------------------------------------------------
         // SORT IMAGES
-        // ------------------------------
+        // --------------------------------------------------------
 
-        const sortedImages = [...imagesData].sort(
-            (a, b) => {
+        const sortedImages = [...imagesData]
+            .filter((image) => Boolean(image.imageUrl))
+            .sort((a, b) => {
+              /*
+               * displayOrder is the primary ordering.
+               */
               if (a.displayOrder !== b.displayOrder) {
                 return a.displayOrder - b.displayOrder;
               }
 
+              /*
+               * If two images have the same order,
+               * primary image wins.
+               */
               if (a.isPrimary && !b.isPrimary) {
                 return -1;
               }
@@ -78,21 +127,42 @@ export default function ProductCard({ product }: ProductCardProps) {
               }
 
               return 0;
-            }
+            });
+
+        console.log(
+            `[ProductCard] ${product.name}: ${sortedImages.length} image(s) loaded`
         );
 
         console.log(
-            `Product "${product.name}" images:`,
-            sortedImages
+            sortedImages.map((image) => ({
+              id: image.id,
+              displayOrder: image.displayOrder,
+              isPrimary: image.isPrimary,
+              url: image.imageUrl,
+            }))
         );
 
         setVariants(sortedVariants);
+
         setImages(sortedImages);
+
+        /*
+         * Always begin from the first real image.
+         */
         setCurrentImageIndex(0);
 
+        /*
+         * For multiple images:
+         *
+         * track position 0 = cloned last image
+         * track position 1 = first real image
+         */
+        setTrackIndex(sortedImages.length > 1 ? 1 : 0);
+
+        setTransitionEnabled(true);
       } catch (error) {
         console.error(
-            `Failed to load data for product ${product.id}:`,
+            `[ProductCard] Failed to load data for ${product.name}:`,
             error
         );
       } finally {
@@ -100,7 +170,7 @@ export default function ProductCard({ product }: ProductCardProps) {
           setVariantsLoading(false);
         }
       }
-    };
+    }
 
     loadProductData();
 
@@ -110,7 +180,83 @@ export default function ProductCard({ product }: ProductCardProps) {
   }, [product.id, product.name]);
 
   // ============================================================
-  // AUTOMATIC IMAGE CHANGE
+  // NEXT IMAGE
+  // ============================================================
+
+  const goNext = () => {
+    if (images.length <= 1) {
+      return;
+    }
+
+    /*
+     * Make sure the movement is animated.
+     */
+    setTransitionEnabled(true);
+
+    /*
+     * Update the visible/dot indicator.
+     */
+    setCurrentImageIndex((current) => {
+      if (current >= images.length - 1) {
+        return 0;
+      }
+
+      return current + 1;
+    });
+
+    /*
+     * Move the actual track one slide.
+     */
+    setTrackIndex((current) => current + 1);
+  };
+
+  // ============================================================
+  // PREVIOUS IMAGE
+  // ============================================================
+
+  const goPrevious = () => {
+    if (images.length <= 1) {
+      return;
+    }
+
+    setTransitionEnabled(true);
+
+    setCurrentImageIndex((current) => {
+      if (current <= 0) {
+        return images.length - 1;
+      }
+
+      return current - 1;
+    });
+
+    setTrackIndex((current) => current - 1);
+  };
+
+  // ============================================================
+  // GO DIRECTLY TO IMAGE
+  // ============================================================
+
+  const goToImage = (index: number) => {
+    if (images.length <= 1) {
+      return;
+    }
+
+    if (index < 0 || index >= images.length) {
+      return;
+    }
+
+    setTransitionEnabled(true);
+
+    setCurrentImageIndex(index);
+
+    /*
+     * +1 because track position 0 is the cloned last image.
+     */
+    setTrackIndex(index + 1);
+  };
+
+  // ============================================================
+  // AUTOMATIC SLIDER
   // ============================================================
 
   useEffect(() => {
@@ -118,14 +264,11 @@ export default function ProductCard({ product }: ProductCardProps) {
       return;
     }
 
+    /*
+     * Automatically move every 3 seconds.
+     */
     const interval = window.setInterval(() => {
-      setCurrentImageIndex((current) => {
-        if (current >= images.length - 1) {
-          return 0;
-        }
-
-        return current + 1;
-      });
+      goNext();
     }, 3000);
 
     return () => {
@@ -134,89 +277,117 @@ export default function ProductCard({ product }: ProductCardProps) {
   }, [images.length]);
 
   // ============================================================
-  // NEXT IMAGE
+  // INFINITE CAROUSEL RESET
   // ============================================================
 
-  const nextImage = () => {
+  const handleTrackTransitionEnd = () => {
     if (images.length <= 1) {
       return;
     }
 
-    setCurrentImageIndex((current) => {
-      if (current >= images.length - 1) {
-        return 0;
-      }
+    /*
+     * Example with 3 images:
+     *
+     * [3] [1] [2] [3] [1]
+     *                 ^
+     *              index 4
+     *
+     * We just animated from real image 3 to cloned image 1.
+     *
+     * Now silently jump back to real image 1.
+     */
+    if (trackIndex === images.length + 1) {
+      setTransitionEnabled(false);
+      setTrackIndex(1);
 
-      return current + 1;
-    });
-  };
+      /*
+       * Wait two animation frames before enabling the
+       * transition again. This prevents the reset itself
+       * from being visible to the user.
+       */
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setTransitionEnabled(true);
+        });
+      });
 
-  // ============================================================
-  // PREVIOUS IMAGE
-  // ============================================================
-
-  const previousImage = () => {
-    if (images.length <= 1) {
       return;
     }
 
-    setCurrentImageIndex((current) => {
-      if (current === 0) {
-        return images.length - 1;
-      }
+    /*
+     * Going backwards:
+     *
+     * [3] [1] [2] [3] [1]
+     *  ^
+     * index 0
+     *
+     * Silently jump to real image 3.
+     */
+    if (trackIndex === 0) {
+      setTransitionEnabled(false);
+      setTrackIndex(images.length);
 
-      return current - 1;
-    });
-  };
-
-  // ============================================================
-  // SELECT IMAGE
-  // ============================================================
-
-  const selectImage = (index: number) => {
-    if (images.length <= 1) {
-      return;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setTransitionEnabled(true);
+        });
+      });
     }
-
-    setCurrentImageIndex(index);
   };
 
   // ============================================================
-  // TOUCH / SWIPE SUPPORT
+  // SWIPE / TOUCH
   // ============================================================
 
-  const [touchStartX, setTouchStartX] = useState<number | null>(
-      null
-  );
-
-  const handleTouchStart = (
-      event: React.TouchEvent<HTMLDivElement>
+  const handlePointerDown = (
+      event: React.PointerEvent<HTMLDivElement>
   ) => {
-    setTouchStartX(event.touches[0].clientX);
-  };
-
-  const handleTouchEnd = (
-      event: React.TouchEvent<HTMLDivElement>
-  ) => {
-    if (touchStartX === null) {
+    if (images.length <= 1) {
       return;
     }
 
-    const touchEndX = event.changedTouches[0].clientX;
+    touchStartX.current = event.clientX;
+  };
 
-    const distance = touchStartX - touchEndX;
-
-    const minimumSwipeDistance = 50;
-
-    if (Math.abs(distance) >= minimumSwipeDistance) {
-      if (distance > 0) {
-        nextImage();
-      } else {
-        previousImage();
-      }
+  const handlePointerUp = (
+      event: React.PointerEvent<HTMLDivElement>
+  ) => {
+    if (
+        images.length <= 1 ||
+        touchStartX.current === null
+    ) {
+      return;
     }
 
-    setTouchStartX(null);
+    const distance =
+        touchStartX.current - event.clientX;
+
+    touchStartX.current = null;
+
+    /*
+     * Ignore tiny movements.
+     */
+    if (Math.abs(distance) < 50) {
+      return;
+    }
+
+    /*
+     * Swipe left = next.
+     */
+    if (distance > 0) {
+      goNext();
+    }
+
+    /*
+     * Swipe right = previous.
+     */
+    else {
+      goPrevious();
+    }
+  };
+
+  const handlePointerCancel = () => {
+    touchStartX.current = null;
   };
 
   // ============================================================
@@ -228,9 +399,17 @@ export default function ProductCard({ product }: ProductCardProps) {
           ? variants[selectedVariantIndex]
           : null;
 
+  // ============================================================
+  // PRICE
+  // ============================================================
+
   const displayPrice = selectedVariant
       ? selectedVariant.price
       : product.price;
+
+  // ============================================================
+  // AVAILABILITY
+  // ============================================================
 
   const isAvailable = selectedVariant
       ? selectedVariant.isAvailable &&
@@ -258,7 +437,8 @@ export default function ProductCard({ product }: ProductCardProps) {
     addItem({
       productId: product.id,
       productName: product.name,
-      productVariantId: selectedVariant?.id ?? null,
+      productVariantId:
+          selectedVariant?.id ?? null,
       variantLabel: variantLabel ?? null,
       unitPrice: displayPrice,
     });
@@ -290,6 +470,26 @@ export default function ProductCard({ product }: ProductCardProps) {
   };
 
   // ============================================================
+  // BUILD CAROUSEL ARRAY
+  //
+  // For 3 images:
+  //
+  // [IMAGE 3] [IMAGE 1] [IMAGE 2] [IMAGE 3] [IMAGE 1]
+  //     0          1          2          3          4
+  //
+  // We start at position 1.
+  // ============================================================
+
+  const carouselImages =
+      images.length > 1
+          ? [
+            images[images.length - 1],
+            ...images,
+            images[0],
+          ]
+          : images;
+
+  // ============================================================
   // RENDER
   // ============================================================
 
@@ -298,58 +498,85 @@ export default function ProductCard({ product }: ProductCardProps) {
         <div className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col border border-orange-100">
 
           {/* ======================================================
-            IMAGE AREA
+          IMAGE CAROUSEL
         ====================================================== */}
 
           <div
               className="relative h-48 bg-orange-50 overflow-hidden group select-none"
-              onTouchStart={handleTouchStart}
-              onTouchEnd={handleTouchEnd}
+              style={{
+                touchAction: "pan-y",
+              }}
+              onPointerDown={handlePointerDown}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerCancel}
           >
 
             {images.length > 0 ? (
                 <>
                   {/* ==================================================
-                  CURRENT IMAGE
+                ACTUAL SLIDING TRACK
               ================================================== */}
 
-                  <img
-                      key={images[currentImageIndex].id}
-                      src={images[currentImageIndex].imageUrl}
-                      alt={`${product.name} - image ${
-                          currentImageIndex + 1
-                      }`}
-                      draggable={false}
-                      className="
-                  absolute
-                  inset-0
-                  w-full
-                  h-full
-                  object-cover
-                  transition-all
-                  duration-500
-                  ease-in-out
-                "
-                  />
+                  <div
+                      className="absolute inset-0 flex"
+                      style={{
+                        transform: `translate3d(-${
+                            trackIndex * 100
+                        }%, 0, 0)`,
+
+                        transition: transitionEnabled
+                            ? "transform 700ms cubic-bezier(0.4, 0, 0.2, 1)"
+                            : "none",
+
+                        willChange: "transform",
+                      }}
+                      onTransitionEnd={
+                        handleTrackTransitionEnd
+                      }
+                  >
+
+                    {carouselImages.map(
+                        (image, index) => (
+                            <div
+                                key={`${image.id}-${index}`}
+                                className="relative h-full w-full flex-shrink-0"
+                            >
+                              <img
+                                  src={image.imageUrl}
+                                  alt={`${product.name} - image ${
+                                      index + 1
+                                  }`}
+                                  className="block w-full h-full object-cover pointer-events-none"
+                                  draggable={false}
+                              />
+                            </div>
+                        )
+                    )}
+
+                  </div>
 
                   {/* ==================================================
-                  LEFT ARROW
+                PREVIOUS BUTTON
               ================================================== */}
 
                   {images.length > 1 && (
                       <button
                           type="button"
+                          onPointerDown={(event) => {
+                            event.stopPropagation();
+                          }}
                           onClick={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
-                            previousImage();
+
+                            goPrevious();
                           }}
                           className="
                     absolute
                     left-3
                     top-1/2
                     -translate-y-1/2
-                    z-[100]
+                    z-30
                     w-10
                     h-10
                     flex
@@ -361,8 +588,6 @@ export default function ProductCard({ product }: ProductCardProps) {
                     text-white
                     shadow-lg
                     cursor-pointer
-                    opacity-100
-                    transition-all
                   "
                           aria-label="Previous image"
                       >
@@ -371,23 +596,27 @@ export default function ProductCard({ product }: ProductCardProps) {
                   )}
 
                   {/* ==================================================
-                  RIGHT ARROW
+                NEXT BUTTON
               ================================================== */}
 
                   {images.length > 1 && (
                       <button
                           type="button"
+                          onPointerDown={(event) => {
+                            event.stopPropagation();
+                          }}
                           onClick={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
-                            nextImage();
+
+                            goNext();
                           }}
                           className="
                     absolute
                     right-3
                     top-1/2
                     -translate-y-1/2
-                    z-[100]
+                    z-30
                     w-10
                     h-10
                     flex
@@ -399,8 +628,6 @@ export default function ProductCard({ product }: ProductCardProps) {
                     text-white
                     shadow-lg
                     cursor-pointer
-                    opacity-100
-                    transition-all
                   "
                           aria-label="Next image"
                       >
@@ -409,7 +636,7 @@ export default function ProductCard({ product }: ProductCardProps) {
                   )}
 
                   {/* ==================================================
-                  IMAGE COUNTER
+                IMAGE COUNTER
               ================================================== */}
 
                   {images.length > 1 && (
@@ -419,7 +646,7 @@ export default function ProductCard({ product }: ProductCardProps) {
                     top-3
                     left-1/2
                     -translate-x-1/2
-                    z-[90]
+                    z-30
                     bg-black/60
                     text-white
                     text-xs
@@ -430,12 +657,13 @@ export default function ProductCard({ product }: ProductCardProps) {
                     pointer-events-none
                   "
                       >
-                        {currentImageIndex + 1} / {images.length}
+                        {currentImageIndex + 1} /{" "}
+                        {images.length}
                       </div>
                   )}
 
                   {/* ==================================================
-                  DOTS
+                DOTS
               ================================================== */}
 
                   {images.length > 1 && (
@@ -445,45 +673,52 @@ export default function ProductCard({ product }: ProductCardProps) {
                     bottom-3
                     left-1/2
                     -translate-x-1/2
-                    z-[100]
+                    z-30
                     flex
                     items-center
                     gap-2
                   "
                       >
-                        {images.map((image, index) => (
-                            <button
-                                key={image.id}
-                                type="button"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  selectImage(index);
-                                }}
-                                aria-label={`Show image ${
-                                    index + 1
-                                }`}
-                                className={`
-                        cursor-pointer
-                        rounded-full
-                        transition-all
-                        duration-300
-                        border-0
-                        p-0
-                        ${
-                                    index === currentImageIndex
-                                        ? "w-7 h-2 bg-white"
-                                        : "w-2 h-2 bg-white/60 hover:bg-white"
-                                }
-                      `}
-                            />
-                        ))}
+                        {images.map(
+                            (image, index) => (
+                                <button
+                                    key={image.id}
+                                    type="button"
+                                    onPointerDown={(event) => {
+                                      event.stopPropagation();
+                                    }}
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+
+                                      goToImage(index);
+                                    }}
+                                    aria-label={`Show image ${
+                                        index + 1
+                                    }`}
+                                    className={`
+                          cursor-pointer
+                          rounded-full
+                          border-0
+                          p-0
+                          transition-all
+                          duration-300
+                          ${
+                                        index ===
+                                        currentImageIndex
+                                            ? "w-7 h-2 bg-white"
+                                            : "w-2 h-2 bg-white/60 hover:bg-white"
+                                    }
+                        `}
+                                />
+                            )
+                        )}
                       </div>
                   )}
                 </>
             ) : (
                 /* ====================================================
-                   NO IMAGE FALLBACK
+                  NO IMAGE FALLBACK
                 ==================================================== */
 
                 <div className="w-full h-full flex items-center justify-center text-5xl">
@@ -495,7 +730,7 @@ export default function ProductCard({ product }: ProductCardProps) {
             )}
 
             {/* ======================================================
-              AVAILABLE BADGE
+            AVAILABLE BADGE
           ====================================================== */}
 
             {isAvailable && (
@@ -504,7 +739,7 @@ export default function ProductCard({ product }: ProductCardProps) {
                 absolute
                 top-3
                 right-3
-                z-[110]
+                z-40
                 bg-green-500
                 text-white
                 text-xs
@@ -520,7 +755,7 @@ export default function ProductCard({ product }: ProductCardProps) {
             )}
 
             {/* ======================================================
-              PRODUCT TYPE
+            PRODUCT TYPE
           ====================================================== */}
 
             <span
@@ -528,7 +763,7 @@ export default function ProductCard({ product }: ProductCardProps) {
               absolute
               top-3
               left-3
-              z-[110]
+              z-40
               bg-[#1C0A00]/80
               text-white
               text-xs
@@ -543,7 +778,7 @@ export default function ProductCard({ product }: ProductCardProps) {
           </span>
 
             {/* ======================================================
-              UNAVAILABLE
+            UNAVAILABLE
           ====================================================== */}
 
             {!isAvailable && (
@@ -555,7 +790,7 @@ export default function ProductCard({ product }: ProductCardProps) {
                 flex
                 items-center
                 justify-center
-                z-[120]
+                z-50
                 pointer-events-none
               "
                 >
@@ -579,7 +814,7 @@ export default function ProductCard({ product }: ProductCardProps) {
           </div>
 
           {/* ======================================================
-            PRODUCT INFORMATION
+          PRODUCT INFORMATION
         ====================================================== */}
 
           <div className="p-5 flex flex-col flex-1">
@@ -599,7 +834,7 @@ export default function ProductCard({ product }: ProductCardProps) {
             )}
 
             {/* ====================================================
-              VARIANTS
+            VARIANTS
           ==================================================== */}
 
             {variantsLoading ? (
@@ -607,12 +842,14 @@ export default function ProductCard({ product }: ProductCardProps) {
                   <div className="h-3 bg-gray-100 rounded animate-pulse w-24" />
 
                   <div className="flex gap-2">
-                    {[1, 2, 3].map((item) => (
-                        <div
-                            key={item}
-                            className="h-8 w-16 bg-gray-100 rounded-lg animate-pulse"
-                        />
-                    ))}
+                    {[1, 2, 3].map(
+                        (item) => (
+                            <div
+                                key={item}
+                                className="h-8 w-16 bg-gray-100 rounded-lg animate-pulse"
+                            />
+                        )
+                    )}
                   </div>
                 </div>
             ) : variants.length > 0 ? (
@@ -623,39 +860,46 @@ export default function ProductCard({ product }: ProductCardProps) {
                   </p>
 
                   <div className="flex flex-wrap gap-2">
-                    {variants.map((variant, index) => (
-                        <button
-                            key={variant.id}
-                            type="button"
-                            onClick={() =>
-                                setSelectedVariantIndex(index)
-                            }
-                            disabled={!variant.isAvailable}
-                            className={`
-                      px-3
-                      py-1.5
-                      rounded-lg
-                      text-xs
-                      font-semibold
-                      border
-                      transition-colors
-                      ${
-                                !variant.isAvailable
-                                    ? "opacity-40 cursor-not-allowed bg-gray-50 text-gray-400 border-gray-200"
-                                    : selectedVariantIndex === index
-                                        ? "bg-[#9B1C1C] text-white border-[#9B1C1C]"
-                                        : "bg-white text-[#1C0A00] border-gray-200 hover:border-[#9B1C1C]"
-                            }
-                    `}
-                        >
-                          {[
-                            variant.name,
-                            variant.weightOrSize,
-                          ]
-                              .filter(Boolean)
-                              .join(" · ")}
-                        </button>
-                    ))}
+                    {variants.map(
+                        (variant, index) => (
+                            <button
+                                key={variant.id}
+                                type="button"
+                                onClick={() =>
+                                    setSelectedVariantIndex(
+                                        index
+                                    )
+                                }
+                                disabled={
+                                  !variant.isAvailable
+                                }
+                                className={`
+                        px-3
+                        py-1.5
+                        rounded-lg
+                        text-xs
+                        font-semibold
+                        border
+                        transition-colors
+                        ${
+                                    !variant.isAvailable
+                                        ? "opacity-40 cursor-not-allowed bg-gray-50 text-gray-400 border-gray-200"
+                                        : selectedVariantIndex ===
+                                        index
+                                            ? "bg-[#9B1C1C] text-white border-[#9B1C1C]"
+                                            : "bg-white text-[#1C0A00] border-gray-200 hover:border-[#9B1C1C]"
+                                }
+                      `}
+                            >
+                              {[
+                                variant.name,
+                                variant.weightOrSize,
+                              ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                            </button>
+                        )
+                    )}
                   </div>
                 </div>
             ) : product.weightOrSize ? (
@@ -667,7 +911,7 @@ export default function ProductCard({ product }: ProductCardProps) {
             ) : null}
 
             {/* ====================================================
-              PRICE
+            PRICE
           ==================================================== */}
 
             {displayPrice !== null && (
@@ -677,7 +921,7 @@ export default function ProductCard({ product }: ProductCardProps) {
             )}
 
             {/* ====================================================
-              BUTTONS
+            BUTTONS
           ==================================================== */}
 
             <div className="mt-auto space-y-2">
@@ -780,7 +1024,7 @@ export default function ProductCard({ product }: ProductCardProps) {
         </div>
 
         {/* ========================================================
-          ORDER MODAL
+        ORDER MODAL
       ======================================================== */}
 
         {showOrderModal && (
