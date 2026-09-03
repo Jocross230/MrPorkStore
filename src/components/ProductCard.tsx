@@ -24,7 +24,9 @@ export default function ProductCard({ product }: ProductCardProps) {
   const [showOrderModal, setShowOrderModal] = useState(false);
 
   /*
+   * ============================================================
    * LOAD PRODUCT VARIANTS + IMAGES
+   * ============================================================
    */
   useEffect(() => {
     let mounted = true;
@@ -37,37 +39,58 @@ export default function ProductCard({ product }: ProductCardProps) {
           if (!mounted) return;
 
           /*
-           * Sort variants by display order
+           * Sort variants.
+           *
+           * Your ProductVariant type already contains displayOrder.
            */
           const sortedVariants = [...variantsData].sort(
               (a, b) => a.displayOrder - b.displayOrder
           );
 
           /*
-           * Sort images by display order.
-           * Primary image is used first if displayOrder
-           * is not available or equal.
+           * Sort images.
+           *
+           * ProductImage type may not contain displayOrder,
+           * so we read it safely from the API response.
            */
           const sortedImages = [...imagesData]
               .sort((a, b) => {
-                const aOrder = (a as ProductImage & { displayOrder?: number }).displayOrder ?? 0;
-                const bOrder = (b as ProductImage & { displayOrder?: number }).displayOrder ?? 0;
+                const aOrder =
+                    (a as ProductImage & { displayOrder?: number }).displayOrder ??
+                    0;
+
+                const bOrder =
+                    (b as ProductImage & { displayOrder?: number }).displayOrder ??
+                    0;
 
                 if (aOrder !== bOrder) {
                   return aOrder - bOrder;
                 }
 
-                if (a.isPrimary && !b.isPrimary) return -1;
-                if (!a.isPrimary && b.isPrimary) return 1;
+                if (a.isPrimary && !b.isPrimary) {
+                  return -1;
+                }
+
+                if (!a.isPrimary && b.isPrimary) {
+                  return 1;
+                }
 
                 return 0;
               })
-              .map((img) => img.imageUrl)
+              .map((image) => image.imageUrl)
               .filter(Boolean);
 
           setVariants(sortedVariants);
           setImages(sortedImages);
           setCurrentImageIndex(0);
+
+          /*
+           * Preload all images.
+           */
+          sortedImages.forEach((imageUrl) => {
+            const image = new Image();
+            image.src = imageUrl;
+          });
         })
         .catch((error) => {
           console.error("Could not load product data:", error);
@@ -84,12 +107,15 @@ export default function ProductCard({ product }: ProductCardProps) {
   }, [product.id]);
 
   /*
+   * ============================================================
    * AUTOMATIC IMAGE SLIDER
-   *
    * Changes image every 3 seconds.
+   * ============================================================
    */
   useEffect(() => {
-    if (images.length <= 1) return;
+    if (images.length <= 1) {
+      return;
+    }
 
     const interval = window.setInterval(() => {
       setCurrentImageIndex((previousIndex) => {
@@ -107,21 +133,13 @@ export default function ProductCard({ product }: ProductCardProps) {
   }, [images.length]);
 
   /*
-   * PRELOAD IMAGES
-   *
-   * This helps prevent the next image from appearing late.
-   */
-  useEffect(() => {
-    images.forEach((imageUrl) => {
-      const image = new Image();
-      image.src = imageUrl;
-    });
-  }, [images]);
-
-  /*
-   * GO TO PREVIOUS IMAGE
+   * ============================================================
+   * PREVIOUS IMAGE
+   * ============================================================
    */
   const previousImage = () => {
+    if (images.length <= 1) return;
+
     setCurrentImageIndex((previousIndex) => {
       if (previousIndex === 0) {
         return images.length - 1;
@@ -132,9 +150,13 @@ export default function ProductCard({ product }: ProductCardProps) {
   };
 
   /*
-   * GO TO NEXT IMAGE
+   * ============================================================
+   * NEXT IMAGE
+   * ============================================================
    */
   const nextImage = () => {
+    if (images.length <= 1) return;
+
     setCurrentImageIndex((previousIndex) => {
       if (previousIndex >= images.length - 1) {
         return 0;
@@ -144,6 +166,11 @@ export default function ProductCard({ product }: ProductCardProps) {
     });
   };
 
+  /*
+   * ============================================================
+   * SELECTED VARIANT
+   * ============================================================
+   */
   const selectedVariant =
       variants.length > 0 ? variants[selectedVariantIndex] : null;
 
@@ -155,10 +182,33 @@ export default function ProductCard({ product }: ProductCardProps) {
       ? selectedVariant.isAvailable && product.isAvailable
       : product.isAvailable;
 
+  /*
+   * ============================================================
+   * CART
+   * ============================================================
+   */
   const { addItem } = useCart();
 
+  const variantLabel = selectedVariant
+      ? [selectedVariant.name, selectedVariant.weightOrSize]
+          .filter(Boolean)
+          .join(" — ")
+      : product.weightOrSize ?? undefined;
+
+  const handleAddToCart = () => {
+    addItem({
+      productId: product.id,
+      productName: product.name,
+      productVariantId: selectedVariant?.id ?? null,
+      variantLabel: variantLabel ?? null,
+      unitPrice: displayPrice,
+    });
+  };
+
   /*
+   * ============================================================
    * WHATSAPP ENQUIRY
+   * ============================================================
    */
   const handleEnquire = () => {
     if (!whatsappNumber) return;
@@ -177,57 +227,58 @@ export default function ProductCard({ product }: ProductCardProps) {
   };
 
   /*
-   * ADD TO CART
+   * ============================================================
+   * RENDER
+   * ============================================================
    */
-  const variantLabel = selectedVariant
-      ? [selectedVariant.name, selectedVariant.weightOrSize]
-          .filter(Boolean)
-          .join(" — ")
-      : product.weightOrSize ?? undefined;
-
-  const handleAddToCart = () => {
-    addItem({
-      productId: product.id,
-      productName: product.name,
-      productVariantId: selectedVariant?.id ?? null,
-      variantLabel: variantLabel ?? null,
-      unitPrice: displayPrice,
-    });
-  };
-
   return (
       <>
         <div className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col border border-orange-100">
 
-          {/* =========================================================
+          {/* ======================================================
             IMAGE CAROUSEL
-        ========================================================= */}
+        ====================================================== */}
           <div className="relative bg-orange-50 h-48 overflow-hidden group">
 
             {images.length > 0 ? (
                 <>
-                  {/* SLIDING IMAGE TRACK */}
-                  <div
-                      className="flex h-full w-full transition-transform duration-700 ease-in-out"
-                      style={{
-                        transform: `translateX(-${currentImageIndex * 100}%)`,
-                      }}
-                  >
-                    {images.map((imageUrl, index) => (
-                        <div
-                            key={`${imageUrl}-${index}`}
-                            className="min-w-full h-full flex-shrink-0"
-                        >
-                          <img
-                              src={imageUrl}
-                              alt={`${product.name} - image ${index + 1}`}
-                              className="w-full h-full object-cover"
-                          />
-                        </div>
-                    ))}
+                  {/* ==================================================
+                  IMAGE SLIDES
+              ================================================== */}
+                  <div className="relative w-full h-full overflow-hidden">
+
+                    {images.map((imageUrl, index) => {
+                      const position =
+                          index === currentImageIndex
+                              ? 0
+                              : index < currentImageIndex
+                                  ? -100
+                                  : 100;
+
+                      return (
+                          <div
+                              key={`${imageUrl}-${index}`}
+                              className="absolute inset-0 w-full h-full"
+                              style={{
+                                transform: `translateX(${position}%)`,
+                                transition:
+                                    "transform 700ms cubic-bezier(0.4, 0, 0.2, 1)",
+                              }}
+                          >
+                            <img
+                                src={imageUrl}
+                                alt={`${product.name} - image ${index + 1}`}
+                                className="w-full h-full object-cover"
+                            />
+                          </div>
+                      );
+                    })}
+
                   </div>
 
-                  {/* LEFT ARROW */}
+                  {/* ==================================================
+                  PREVIOUS BUTTON
+              ================================================== */}
                   {images.length > 1 && (
                       <button
                           type="button"
@@ -237,7 +288,7 @@ export default function ProductCard({ product }: ProductCardProps) {
                     left-2
                     top-1/2
                     -translate-y-1/2
-                    z-10
+                    z-30
                     bg-black/60
                     hover:bg-black/80
                     text-white
@@ -254,7 +305,9 @@ export default function ProductCard({ product }: ProductCardProps) {
                       </button>
                   )}
 
-                  {/* RIGHT ARROW */}
+                  {/* ==================================================
+                  NEXT BUTTON
+              ================================================== */}
                   {images.length > 1 && (
                       <button
                           type="button"
@@ -264,7 +317,7 @@ export default function ProductCard({ product }: ProductCardProps) {
                     right-2
                     top-1/2
                     -translate-y-1/2
-                    z-10
+                    z-30
                     bg-black/60
                     hover:bg-black/80
                     text-white
@@ -281,9 +334,11 @@ export default function ProductCard({ product }: ProductCardProps) {
                       </button>
                   )}
 
-                  {/* SLIDER DOTS */}
+                  {/* ==================================================
+                  SLIDER DOTS
+              ================================================== */}
                   {images.length > 1 && (
-                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5">
+                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5">
                         {images.map((_, index) => (
                             <button
                                 key={index}
@@ -307,9 +362,9 @@ export default function ProductCard({ product }: ProductCardProps) {
                   )}
                 </>
             ) : (
-                /*
-                 * FALLBACK WHEN THERE ARE NO IMAGES
-                 */
+                /* ====================================================
+                   NO IMAGE FALLBACK
+                ==================================================== */
                 <div className="w-full h-full flex items-center justify-center text-5xl">
                   {product.category.toLowerCase() === "chicken"
                       ? "🐔"
@@ -317,46 +372,54 @@ export default function ProductCard({ product }: ProductCardProps) {
                 </div>
             )}
 
-            {/* UNAVAILABLE OVERLAY */}
+            {/* ======================================================
+              UNAVAILABLE OVERLAY
+          ====================================================== */}
             {!isAvailable && (
-                <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-20">
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-40">
               <span className="bg-red-600 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
                 Unavailable
               </span>
                 </div>
             )}
 
-            {/* AVAILABLE BADGE */}
+            {/* ======================================================
+              AVAILABLE BADGE
+          ====================================================== */}
             {isAvailable && (
-                <span className="absolute top-3 right-3 z-20 bg-green-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                <span className="absolute top-3 right-3 z-40 bg-green-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">
               Available
             </span>
             )}
 
-            {/* PRODUCT TYPE */}
-            <span className="absolute top-3 left-3 z-20 bg-[#1C0A00]/70 text-white text-xs px-2.5 py-1 rounded-full capitalize">
+            {/* ======================================================
+              PRODUCT TYPE
+          ====================================================== */}
+            <span className="absolute top-3 left-3 z-40 bg-[#1C0A00]/70 text-white text-xs px-2.5 py-1 rounded-full capitalize">
             {product.productType}
           </span>
           </div>
 
-          {/* =========================================================
+          {/* ======================================================
             PRODUCT INFORMATION
-        ========================================================= */}
+        ====================================================== */}
           <div className="p-5 flex flex-col flex-1">
 
+            {/* PRODUCT NAME */}
             <h3 className="font-display font-700 text-lg text-[#1C0A00] mb-1">
               {product.name}
             </h3>
 
+            {/* DESCRIPTION */}
             {product.description && (
                 <p className="text-gray-500 text-xs leading-relaxed mb-4">
                   {product.description}
                 </p>
             )}
 
-            {/* =======================================================
+            {/* ====================================================
               VARIANTS
-          ======================================================= */}
+          ==================================================== */}
             {variantsLoading ? (
                 <div className="mb-4 space-y-2">
                   <div className="h-3 bg-gray-100 rounded animate-pulse w-24" />
@@ -372,6 +435,7 @@ export default function ProductCard({ product }: ProductCardProps) {
                 </div>
             ) : variants.length > 0 ? (
                 <div className="mb-4">
+
                   <p className="text-xs font-semibold text-[#78350F] uppercase tracking-wider mb-2">
                     Select Size / Weight
                   </p>
@@ -415,18 +479,18 @@ export default function ProductCard({ product }: ProductCardProps) {
                 </div>
             ) : null}
 
-            {/* =======================================================
+            {/* ====================================================
               PRICE
-          ======================================================= */}
+          ==================================================== */}
             {displayPrice !== null && (
                 <p className="text-[#9B1C1C] font-display font-700 text-xl mb-4">
                   ₦{displayPrice.toLocaleString()}
                 </p>
             )}
 
-            {/* =======================================================
+            {/* ====================================================
               ACTION BUTTONS
-          ======================================================= */}
+          ==================================================== */}
             <div className="mt-auto space-y-2">
 
               {/* ADD TO CART */}
@@ -473,6 +537,7 @@ export default function ProductCard({ product }: ProductCardProps) {
               {/* ORDER + ENQUIRE */}
               <div className="flex gap-2">
 
+                {/* ORDER NOW */}
                 <button
                     type="button"
                     onClick={() => setShowOrderModal(true)}
@@ -495,6 +560,7 @@ export default function ProductCard({ product }: ProductCardProps) {
                   Order Now
                 </button>
 
+                {/* ENQUIRE */}
                 <button
                     type="button"
                     onClick={handleEnquire}
@@ -519,9 +585,9 @@ export default function ProductCard({ product }: ProductCardProps) {
           </div>
         </div>
 
-        {/* =========================================================
+        {/* ========================================================
           ORDER MODAL
-      ========================================================= */}
+      ======================================================== */}
         {showOrderModal && (
             <OrderModal
                 productId={product.id}
