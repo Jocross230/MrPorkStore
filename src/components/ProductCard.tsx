@@ -29,13 +29,13 @@ export default function ProductCard({ product }: ProductCardProps) {
   const [showOrderModal, setShowOrderModal] = useState(false);
 
   // ============================================================
-  // LOAD VARIANTS + IMAGES
+  // LOAD PRODUCT DATA
   // ============================================================
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadProductData() {
+    const loadProductData = async () => {
       setVariantsLoading(true);
 
       try {
@@ -43,6 +43,7 @@ export default function ProductCard({ product }: ProductCardProps) {
           api.get<ProductVariant[]>(
               `/products/${product.id}/variants`
           ),
+
           api.get<ProductImage[]>(
               `/products/${product.id}/images`
           ),
@@ -50,44 +51,48 @@ export default function ProductCard({ product }: ProductCardProps) {
 
         if (cancelled) return;
 
-        // Sort variants
+        // ------------------------------
+        // SORT VARIANTS
+        // ------------------------------
+
         const sortedVariants = [...variantsData].sort(
             (a, b) => a.displayOrder - b.displayOrder
         );
 
-        // Sort images by display order.
-        // Primary image is first when orders are equal.
-        const sortedImages = [...imagesData].sort((a, b) => {
-          const orderA = a.displayOrder ?? 0;
-          const orderB = b.displayOrder ?? 0;
+        // ------------------------------
+        // SORT IMAGES
+        // ------------------------------
 
-          if (orderA !== orderB) {
-            return orderA - orderB;
-          }
+        const sortedImages = [...imagesData].sort(
+            (a, b) => {
+              if (a.displayOrder !== b.displayOrder) {
+                return a.displayOrder - b.displayOrder;
+              }
 
-          if (a.isPrimary && !b.isPrimary) {
-            return -1;
-          }
+              if (a.isPrimary && !b.isPrimary) {
+                return -1;
+              }
 
-          if (!a.isPrimary && b.isPrimary) {
-            return 1;
-          }
+              if (!a.isPrimary && b.isPrimary) {
+                return 1;
+              }
 
-          return 0;
-        });
+              return 0;
+            }
+        );
+
+        console.log(
+            `Product "${product.name}" images:`,
+            sortedImages
+        );
 
         setVariants(sortedVariants);
         setImages(sortedImages);
         setCurrentImageIndex(0);
 
-        // Preload images
-        sortedImages.forEach((image) => {
-          const img = new Image();
-          img.src = image.imageUrl;
-        });
       } catch (error) {
         console.error(
-            "Could not load product variants/images:",
+            `Failed to load data for product ${product.id}:`,
             error
         );
       } finally {
@@ -95,17 +100,17 @@ export default function ProductCard({ product }: ProductCardProps) {
           setVariantsLoading(false);
         }
       }
-    }
+    };
 
     loadProductData();
 
     return () => {
       cancelled = true;
     };
-  }, [product.id]);
+  }, [product.id, product.name]);
 
   // ============================================================
-  // AUTOMATIC SLIDER
+  // AUTOMATIC IMAGE CHANGE
   // ============================================================
 
   useEffect(() => {
@@ -113,45 +118,105 @@ export default function ProductCard({ product }: ProductCardProps) {
       return;
     }
 
-    const timer = window.setTimeout(() => {
+    const interval = window.setInterval(() => {
       setCurrentImageIndex((current) => {
-        return current >= images.length - 1
-            ? 0
-            : current + 1;
+        if (current >= images.length - 1) {
+          return 0;
+        }
+
+        return current + 1;
       });
     }, 3000);
 
     return () => {
-      window.clearTimeout(timer);
+      window.clearInterval(interval);
     };
-  }, [images, currentImageIndex]);
+  }, [images.length]);
 
   // ============================================================
-  // PREVIOUS
+  // NEXT IMAGE
   // ============================================================
 
-  const previousImage = () => {
-    if (images.length <= 1) return;
+  const nextImage = () => {
+    if (images.length <= 1) {
+      return;
+    }
 
     setCurrentImageIndex((current) => {
-      return current === 0
-          ? images.length - 1
-          : current - 1;
+      if (current >= images.length - 1) {
+        return 0;
+      }
+
+      return current + 1;
     });
   };
 
   // ============================================================
-  // NEXT
+  // PREVIOUS IMAGE
   // ============================================================
 
-  const nextImage = () => {
-    if (images.length <= 1) return;
+  const previousImage = () => {
+    if (images.length <= 1) {
+      return;
+    }
 
     setCurrentImageIndex((current) => {
-      return current >= images.length - 1
-          ? 0
-          : current + 1;
+      if (current === 0) {
+        return images.length - 1;
+      }
+
+      return current - 1;
     });
+  };
+
+  // ============================================================
+  // SELECT IMAGE
+  // ============================================================
+
+  const selectImage = (index: number) => {
+    if (images.length <= 1) {
+      return;
+    }
+
+    setCurrentImageIndex(index);
+  };
+
+  // ============================================================
+  // TOUCH / SWIPE SUPPORT
+  // ============================================================
+
+  const [touchStartX, setTouchStartX] = useState<number | null>(
+      null
+  );
+
+  const handleTouchStart = (
+      event: React.TouchEvent<HTMLDivElement>
+  ) => {
+    setTouchStartX(event.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (
+      event: React.TouchEvent<HTMLDivElement>
+  ) => {
+    if (touchStartX === null) {
+      return;
+    }
+
+    const touchEndX = event.changedTouches[0].clientX;
+
+    const distance = touchStartX - touchEndX;
+
+    const minimumSwipeDistance = 50;
+
+    if (Math.abs(distance) >= minimumSwipeDistance) {
+      if (distance > 0) {
+        nextImage();
+      } else {
+        previousImage();
+      }
+    }
+
+    setTouchStartX(null);
   };
 
   // ============================================================
@@ -168,8 +233,13 @@ export default function ProductCard({ product }: ProductCardProps) {
       : product.price;
 
   const isAvailable = selectedVariant
-      ? selectedVariant.isAvailable && product.isAvailable
+      ? selectedVariant.isAvailable &&
+      product.isAvailable
       : product.isAvailable;
+
+  // ============================================================
+  // VARIANT LABEL
+  // ============================================================
 
   const variantLabel = selectedVariant
       ? [
@@ -195,11 +265,13 @@ export default function ProductCard({ product }: ProductCardProps) {
   };
 
   // ============================================================
-  // WHATSAPP
+  // WHATSAPP ENQUIRY
   // ============================================================
 
   const handleEnquire = () => {
-    if (!whatsappNumber) return;
+    if (!whatsappNumber) {
+      return;
+    }
 
     const message =
         `Hello Mr.Pork Store! 👋\n\n` +
@@ -226,50 +298,42 @@ export default function ProductCard({ product }: ProductCardProps) {
         <div className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col border border-orange-100">
 
           {/* ======================================================
-            IMAGE CAROUSEL
+            IMAGE AREA
         ====================================================== */}
 
-          <div className="relative h-48 bg-orange-50 overflow-hidden group">
+          <div
+              className="relative h-48 bg-orange-50 overflow-hidden group select-none"
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+          >
 
             {images.length > 0 ? (
-                <div className="absolute inset-0">
+                <>
+                  {/* ==================================================
+                  CURRENT IMAGE
+              ================================================== */}
 
-                  {/* SLIDING TRACK */}
-
-                  <div
-                      className="absolute inset-0 flex"
-                      style={{
-                        width: `${images.length * 100}%`,
-                        transform: `translateX(-${
-                            (currentImageIndex * 100) /
-                            images.length
-                        }%)`,
-                        transition:
-                            "transform 700ms cubic-bezier(0.4, 0, 0.2, 1)",
-                      }}
-                  >
-                    {images.map((image, index) => (
-                        <div
-                            key={`${image.id}-${index}`}
-                            className="relative h-full flex-shrink-0"
-                            style={{
-                              width: `${100 / images.length}%`,
-                            }}
-                        >
-                          <img
-                              src={image.imageUrl}
-                              alt={`${product.name} - image ${
-                                  index + 1
-                              }`}
-                              className="absolute inset-0 w-full h-full object-cover"
-                              draggable={false}
-                          />
-                        </div>
-                    ))}
-                  </div>
+                  <img
+                      key={images[currentImageIndex].id}
+                      src={images[currentImageIndex].imageUrl}
+                      alt={`${product.name} - image ${
+                          currentImageIndex + 1
+                      }`}
+                      draggable={false}
+                      className="
+                  absolute
+                  inset-0
+                  w-full
+                  h-full
+                  object-cover
+                  transition-all
+                  duration-500
+                  ease-in-out
+                "
+                  />
 
                   {/* ==================================================
-                  LEFT BUTTON
+                  LEFT ARROW
               ================================================== */}
 
                   {images.length > 1 && (
@@ -280,15 +344,34 @@ export default function ProductCard({ product }: ProductCardProps) {
                             event.stopPropagation();
                             previousImage();
                           }}
-                          className="absolute left-2 top-1/2 -translate-y-1/2 z-50 w-9 h-9 flex items-center justify-center rounded-full bg-black/60 hover:bg-black/80 text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                          className="
+                    absolute
+                    left-3
+                    top-1/2
+                    -translate-y-1/2
+                    z-[100]
+                    w-10
+                    h-10
+                    flex
+                    items-center
+                    justify-center
+                    rounded-full
+                    bg-black/60
+                    hover:bg-black/80
+                    text-white
+                    shadow-lg
+                    cursor-pointer
+                    opacity-100
+                    transition-all
+                  "
                           aria-label="Previous image"
                       >
-                        <ChevronLeft className="w-5 h-5" />
+                        <ChevronLeft className="w-6 h-6" />
                       </button>
                   )}
 
                   {/* ==================================================
-                  RIGHT BUTTON
+                  RIGHT ARROW
               ================================================== */}
 
                   {images.length > 1 && (
@@ -299,11 +382,56 @@ export default function ProductCard({ product }: ProductCardProps) {
                             event.stopPropagation();
                             nextImage();
                           }}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 z-50 w-9 h-9 flex items-center justify-center rounded-full bg-black/60 hover:bg-black/80 text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                          className="
+                    absolute
+                    right-3
+                    top-1/2
+                    -translate-y-1/2
+                    z-[100]
+                    w-10
+                    h-10
+                    flex
+                    items-center
+                    justify-center
+                    rounded-full
+                    bg-black/60
+                    hover:bg-black/80
+                    text-white
+                    shadow-lg
+                    cursor-pointer
+                    opacity-100
+                    transition-all
+                  "
                           aria-label="Next image"
                       >
-                        <ChevronRight className="w-5 h-5" />
+                        <ChevronRight className="w-6 h-6" />
                       </button>
+                  )}
+
+                  {/* ==================================================
+                  IMAGE COUNTER
+              ================================================== */}
+
+                  {images.length > 1 && (
+                      <div
+                          className="
+                    absolute
+                    top-3
+                    left-1/2
+                    -translate-x-1/2
+                    z-[90]
+                    bg-black/60
+                    text-white
+                    text-xs
+                    font-semibold
+                    px-3
+                    py-1
+                    rounded-full
+                    pointer-events-none
+                  "
+                      >
+                        {currentImageIndex + 1} / {images.length}
+                      </div>
                   )}
 
                   {/* ==================================================
@@ -311,7 +439,18 @@ export default function ProductCard({ product }: ProductCardProps) {
               ================================================== */}
 
                   {images.length > 1 && (
-                      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5">
+                      <div
+                          className="
+                    absolute
+                    bottom-3
+                    left-1/2
+                    -translate-x-1/2
+                    z-[100]
+                    flex
+                    items-center
+                    gap-2
+                  "
+                      >
                         {images.map((image, index) => (
                             <button
                                 key={image.id}
@@ -319,22 +458,34 @@ export default function ProductCard({ product }: ProductCardProps) {
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
-                                  setCurrentImageIndex(index);
+                                  selectImage(index);
                                 }}
-                                aria-label={`Go to image ${
+                                aria-label={`Show image ${
                                     index + 1
                                 }`}
-                                className={`h-2 rounded-full cursor-pointer transition-all duration-300 ${
+                                className={`
+                        cursor-pointer
+                        rounded-full
+                        transition-all
+                        duration-300
+                        border-0
+                        p-0
+                        ${
                                     index === currentImageIndex
-                                        ? "w-6 bg-white"
-                                        : "w-2 bg-white/60 hover:bg-white"
-                                }`}
+                                        ? "w-7 h-2 bg-white"
+                                        : "w-2 h-2 bg-white/60 hover:bg-white"
+                                }
+                      `}
                             />
                         ))}
                       </div>
                   )}
-                </div>
+                </>
             ) : (
+                /* ====================================================
+                   NO IMAGE FALLBACK
+                ==================================================== */
+
                 <div className="w-full h-full flex items-center justify-center text-5xl">
                   {product.category.toLowerCase() ===
                   "chicken"
@@ -344,23 +495,26 @@ export default function ProductCard({ product }: ProductCardProps) {
             )}
 
             {/* ======================================================
-              UNAVAILABLE
-          ====================================================== */}
-
-            {!isAvailable && (
-                <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-40 pointer-events-none">
-              <span className="bg-red-600 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-                Unavailable
-              </span>
-                </div>
-            )}
-
-            {/* ======================================================
-              AVAILABLE
+              AVAILABLE BADGE
           ====================================================== */}
 
             {isAvailable && (
-                <span className="absolute top-3 right-3 z-40 bg-green-500 text-white text-xs font-bold px-2.5 py-1 rounded-full pointer-events-none">
+                <span
+                    className="
+                absolute
+                top-3
+                right-3
+                z-[110]
+                bg-green-500
+                text-white
+                text-xs
+                font-bold
+                px-2.5
+                py-1
+                rounded-full
+                pointer-events-none
+              "
+                >
               Available
             </span>
             )}
@@ -369,10 +523,59 @@ export default function ProductCard({ product }: ProductCardProps) {
               PRODUCT TYPE
           ====================================================== */}
 
-            <span className="absolute top-3 left-3 z-40 bg-[#1C0A00]/70 text-white text-xs px-2.5 py-1 rounded-full capitalize pointer-events-none">
+            <span
+                className="
+              absolute
+              top-3
+              left-3
+              z-[110]
+              bg-[#1C0A00]/80
+              text-white
+              text-xs
+              px-2.5
+              py-1
+              rounded-full
+              capitalize
+              pointer-events-none
+            "
+            >
             {product.productType}
           </span>
 
+            {/* ======================================================
+              UNAVAILABLE
+          ====================================================== */}
+
+            {!isAvailable && (
+                <div
+                    className="
+                absolute
+                inset-0
+                bg-black/50
+                flex
+                items-center
+                justify-center
+                z-[120]
+                pointer-events-none
+              "
+                >
+              <span
+                  className="
+                  bg-red-600
+                  text-white
+                  text-xs
+                  font-bold
+                  px-3
+                  py-1
+                  rounded-full
+                  uppercase
+                  tracking-wider
+                "
+              >
+                Unavailable
+              </span>
+                </div>
+            )}
           </div>
 
           {/* ======================================================
@@ -381,9 +584,13 @@ export default function ProductCard({ product }: ProductCardProps) {
 
           <div className="p-5 flex flex-col flex-1">
 
+            {/* PRODUCT NAME */}
+
             <h3 className="font-display font-700 text-lg text-[#1C0A00] mb-1">
               {product.name}
             </h3>
+
+            {/* DESCRIPTION */}
 
             {product.description && (
                 <p className="text-gray-500 text-xs leading-relaxed mb-4">
@@ -424,13 +631,22 @@ export default function ProductCard({ product }: ProductCardProps) {
                                 setSelectedVariantIndex(index)
                             }
                             disabled={!variant.isAvailable}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                            className={`
+                      px-3
+                      py-1.5
+                      rounded-lg
+                      text-xs
+                      font-semibold
+                      border
+                      transition-colors
+                      ${
                                 !variant.isAvailable
                                     ? "opacity-40 cursor-not-allowed bg-gray-50 text-gray-400 border-gray-200"
                                     : selectedVariantIndex === index
                                         ? "bg-[#9B1C1C] text-white border-[#9B1C1C]"
                                         : "bg-white text-[#1C0A00] border-gray-200 hover:border-[#9B1C1C]"
-                            }`}
+                            }
+                    `}
                         >
                           {[
                             variant.name,
@@ -441,7 +657,6 @@ export default function ProductCard({ product }: ProductCardProps) {
                         </button>
                     ))}
                   </div>
-
                 </div>
             ) : product.weightOrSize ? (
                 <div className="mb-4">
@@ -462,18 +677,38 @@ export default function ProductCard({ product }: ProductCardProps) {
             )}
 
             {/* ====================================================
-              ACTION BUTTONS
+              BUTTONS
           ==================================================== */}
 
             <div className="mt-auto space-y-2">
+
+              {/* ADD TO CART */}
 
               <button
                   type="button"
                   onClick={handleAddToCart}
                   disabled={
-                      !isAvailable || variantsLoading
+                      !isAvailable ||
+                      variantsLoading
                   }
-                  className="w-full bg-[#EA580C] hover:bg-[#C2410C] disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-2.5 px-3 rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
+                  className="
+                w-full
+                bg-[#EA580C]
+                hover:bg-[#C2410C]
+                disabled:opacity-40
+                disabled:cursor-not-allowed
+                text-white
+                font-semibold
+                py-2.5
+                px-3
+                rounded-xl
+                text-sm
+                transition-colors
+                flex
+                items-center
+                justify-center
+                gap-2
+              "
               >
                 <svg
                     className="w-4 h-4"
@@ -492,6 +727,8 @@ export default function ProductCard({ product }: ProductCardProps) {
                 Add to Cart
               </button>
 
+              {/* ORDER + ENQUIRE */}
+
               <div className="flex gap-2">
 
                 <button
@@ -500,7 +737,20 @@ export default function ProductCard({ product }: ProductCardProps) {
                         setShowOrderModal(true)
                     }
                     disabled={!isAvailable}
-                    className="flex-1 bg-[#9B1C1C] hover:bg-[#7F1515] disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-2.5 px-3 rounded-xl text-sm transition-colors"
+                    className="
+                  flex-1
+                  bg-[#9B1C1C]
+                  hover:bg-[#7F1515]
+                  disabled:opacity-40
+                  disabled:cursor-not-allowed
+                  text-white
+                  font-semibold
+                  py-2.5
+                  px-3
+                  rounded-xl
+                  text-sm
+                  transition-colors
+                "
                 >
                   Order Now
                 </button>
@@ -508,7 +758,18 @@ export default function ProductCard({ product }: ProductCardProps) {
                 <button
                     type="button"
                     onClick={handleEnquire}
-                    className="px-3 py-2.5 border border-gray-200 hover:border-[#9B1C1C] text-gray-500 hover:text-[#9B1C1C] rounded-xl text-sm transition-colors"
+                    className="
+                  px-3
+                  py-2.5
+                  border
+                  border-gray-200
+                  hover:border-[#9B1C1C]
+                  text-gray-500
+                  hover:text-[#9B1C1C]
+                  rounded-xl
+                  text-sm
+                  transition-colors
+                "
                 >
                   Enquire
                 </button>

@@ -58,6 +58,7 @@ export interface ProductImage {
   createdAt: string;
 }
 
+
 // ─── Orders ──────────────────────────────────────────────────────────────────
 
 export interface CreateOrderRequest {
