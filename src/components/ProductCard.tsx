@@ -1,10 +1,14 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "../lib/api";
 import { useAppContext } from "../lib/AppContext";
 import { useCart } from "../lib/CartContext";
 import { normalizeWhatsAppNumber } from "../lib/utils";
-import type { Product, ProductVariant, ProductImage } from "../lib/types";
+import type {
+  Product,
+  ProductVariant,
+  ProductImage,
+} from "../lib/types";
 import OrderModal from "./OrderModal";
 
 interface ProductCardProps {
@@ -13,166 +17,151 @@ interface ProductCardProps {
 
 export default function ProductCard({ product }: ProductCardProps) {
   const { whatsappNumber } = useAppContext();
+  const { addItem } = useCart();
 
   const [variants, setVariants] = useState<ProductVariant[]>([]);
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
   const [variantsLoading, setVariantsLoading] = useState(true);
 
-  const [images, setImages] = useState<string[]>([]);
+  const [images, setImages] = useState<ProductImage[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   const [showOrderModal, setShowOrderModal] = useState(false);
 
-  /*
-   * ============================================================
-   * LOAD PRODUCT VARIANTS + IMAGES
-   * ============================================================
-   */
+  // ============================================================
+  // LOAD VARIANTS + IMAGES
+  // ============================================================
+
   useEffect(() => {
-    let mounted = true;
+    let cancelled = false;
 
-    Promise.all([
-      api.get<ProductVariant[]>(`/products/${product.id}/variants`),
-      api.get<ProductImage[]>(`/products/${product.id}/images`),
-    ])
-        .then(([variantsData, imagesData]) => {
-          if (!mounted) return;
+    async function loadProductData() {
+      setVariantsLoading(true);
 
-          /*
-           * Sort variants.
-           *
-           * Your ProductVariant type already contains displayOrder.
-           */
-          const sortedVariants = [...variantsData].sort(
-              (a, b) => a.displayOrder - b.displayOrder
-          );
+      try {
+        const [variantsData, imagesData] = await Promise.all([
+          api.get<ProductVariant[]>(
+              `/products/${product.id}/variants`
+          ),
+          api.get<ProductImage[]>(
+              `/products/${product.id}/images`
+          ),
+        ]);
 
-          /*
-           * Sort images.
-           *
-           * ProductImage type may not contain displayOrder,
-           * so we read it safely from the API response.
-           */
-          const sortedImages = [...imagesData]
-              .sort((a, b) => {
-                const aOrder =
-                    (a as ProductImage & { displayOrder?: number }).displayOrder ??
-                    0;
+        if (cancelled) return;
 
-                const bOrder =
-                    (b as ProductImage & { displayOrder?: number }).displayOrder ??
-                    0;
+        // Sort variants
+        const sortedVariants = [...variantsData].sort(
+            (a, b) => a.displayOrder - b.displayOrder
+        );
 
-                if (aOrder !== bOrder) {
-                  return aOrder - bOrder;
-                }
+        // Sort images by display order.
+        // Primary image is first when orders are equal.
+        const sortedImages = [...imagesData].sort((a, b) => {
+          const orderA = a.displayOrder ?? 0;
+          const orderB = b.displayOrder ?? 0;
 
-                if (a.isPrimary && !b.isPrimary) {
-                  return -1;
-                }
-
-                if (!a.isPrimary && b.isPrimary) {
-                  return 1;
-                }
-
-                return 0;
-              })
-              .map((image) => image.imageUrl)
-              .filter(Boolean);
-
-          setVariants(sortedVariants);
-          setImages(sortedImages);
-          setCurrentImageIndex(0);
-
-          /*
-           * Preload all images.
-           */
-          sortedImages.forEach((imageUrl) => {
-            const image = new Image();
-            image.src = imageUrl;
-          });
-        })
-        .catch((error) => {
-          console.error("Could not load product data:", error);
-        })
-        .finally(() => {
-          if (mounted) {
-            setVariantsLoading(false);
+          if (orderA !== orderB) {
+            return orderA - orderB;
           }
+
+          if (a.isPrimary && !b.isPrimary) {
+            return -1;
+          }
+
+          if (!a.isPrimary && b.isPrimary) {
+            return 1;
+          }
+
+          return 0;
         });
 
+        setVariants(sortedVariants);
+        setImages(sortedImages);
+        setCurrentImageIndex(0);
+
+        // Preload images
+        sortedImages.forEach((image) => {
+          const img = new Image();
+          img.src = image.imageUrl;
+        });
+      } catch (error) {
+        console.error(
+            "Could not load product variants/images:",
+            error
+        );
+      } finally {
+        if (!cancelled) {
+          setVariantsLoading(false);
+        }
+      }
+    }
+
+    loadProductData();
+
     return () => {
-      mounted = false;
+      cancelled = true;
     };
   }, [product.id]);
 
-  /*
-   * ============================================================
-   * AUTOMATIC IMAGE SLIDER
-   * Changes image every 3 seconds.
-   * ============================================================
-   */
+  // ============================================================
+  // AUTOMATIC SLIDER
+  // ============================================================
+
   useEffect(() => {
     if (images.length <= 1) {
       return;
     }
 
-    const interval = window.setInterval(() => {
-      setCurrentImageIndex((previousIndex) => {
-        if (previousIndex >= images.length - 1) {
-          return 0;
-        }
-
-        return previousIndex + 1;
+    const timer = window.setTimeout(() => {
+      setCurrentImageIndex((current) => {
+        return current >= images.length - 1
+            ? 0
+            : current + 1;
       });
     }, 3000);
 
     return () => {
-      window.clearInterval(interval);
+      window.clearTimeout(timer);
     };
-  }, [images.length]);
+  }, [images, currentImageIndex]);
 
-  /*
-   * ============================================================
-   * PREVIOUS IMAGE
-   * ============================================================
-   */
+  // ============================================================
+  // PREVIOUS
+  // ============================================================
+
   const previousImage = () => {
     if (images.length <= 1) return;
 
-    setCurrentImageIndex((previousIndex) => {
-      if (previousIndex === 0) {
-        return images.length - 1;
-      }
-
-      return previousIndex - 1;
+    setCurrentImageIndex((current) => {
+      return current === 0
+          ? images.length - 1
+          : current - 1;
     });
   };
 
-  /*
-   * ============================================================
-   * NEXT IMAGE
-   * ============================================================
-   */
+  // ============================================================
+  // NEXT
+  // ============================================================
+
   const nextImage = () => {
     if (images.length <= 1) return;
 
-    setCurrentImageIndex((previousIndex) => {
-      if (previousIndex >= images.length - 1) {
-        return 0;
-      }
-
-      return previousIndex + 1;
+    setCurrentImageIndex((current) => {
+      return current >= images.length - 1
+          ? 0
+          : current + 1;
     });
   };
 
-  /*
-   * ============================================================
-   * SELECTED VARIANT
-   * ============================================================
-   */
+  // ============================================================
+  // SELECTED VARIANT
+  // ============================================================
+
   const selectedVariant =
-      variants.length > 0 ? variants[selectedVariantIndex] : null;
+      variants.length > 0
+          ? variants[selectedVariantIndex]
+          : null;
 
   const displayPrice = selectedVariant
       ? selectedVariant.price
@@ -182,18 +171,18 @@ export default function ProductCard({ product }: ProductCardProps) {
       ? selectedVariant.isAvailable && product.isAvailable
       : product.isAvailable;
 
-  /*
-   * ============================================================
-   * CART
-   * ============================================================
-   */
-  const { addItem } = useCart();
-
   const variantLabel = selectedVariant
-      ? [selectedVariant.name, selectedVariant.weightOrSize]
+      ? [
+        selectedVariant.name,
+        selectedVariant.weightOrSize,
+      ]
           .filter(Boolean)
           .join(" — ")
       : product.weightOrSize ?? undefined;
+
+  // ============================================================
+  // ADD TO CART
+  // ============================================================
 
   const handleAddToCart = () => {
     addItem({
@@ -205,32 +194,33 @@ export default function ProductCard({ product }: ProductCardProps) {
     });
   };
 
-  /*
-   * ============================================================
-   * WHATSAPP ENQUIRY
-   * ============================================================
-   */
+  // ============================================================
+  // WHATSAPP
+  // ============================================================
+
   const handleEnquire = () => {
     if (!whatsappNumber) return;
 
-    const msg =
+    const message =
         `Hello Mr.Pork Store! 👋\n\n` +
         `I'd like to enquire about *${product.name}*.\n\n` +
         `Could you please share more details? Thank you!`;
 
+    const number =
+        normalizeWhatsAppNumber(whatsappNumber);
+
     window.open(
-        `https://wa.me/${normalizeWhatsAppNumber(
-            whatsappNumber
-        )}?text=${encodeURIComponent(msg)}`,
+        `https://wa.me/${number}?text=${encodeURIComponent(
+            message
+        )}`,
         "_blank"
     );
   };
 
-  /*
-   * ============================================================
-   * RENDER
-   * ============================================================
-   */
+  // ============================================================
+  // RENDER
+  // ============================================================
+
   return (
       <>
         <div className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col border border-orange-100">
@@ -238,67 +228,59 @@ export default function ProductCard({ product }: ProductCardProps) {
           {/* ======================================================
             IMAGE CAROUSEL
         ====================================================== */}
-          <div className="relative bg-orange-50 h-48 overflow-hidden group">
+
+          <div className="relative h-48 bg-orange-50 overflow-hidden group">
 
             {images.length > 0 ? (
-                <>
-                  {/* ==================================================
-                  IMAGE SLIDES
-              ================================================== */}
-                  <div className="relative w-full h-full overflow-hidden">
+                <div className="absolute inset-0">
 
-                    {images.map((imageUrl, index) => {
-                      const position =
-                          index === currentImageIndex
-                              ? 0
-                              : index < currentImageIndex
-                                  ? -100
-                                  : 100;
+                  {/* SLIDING TRACK */}
 
-                      return (
-                          <div
-                              key={`${imageUrl}-${index}`}
-                              className="absolute inset-0 w-full h-full"
-                              style={{
-                                transform: `translateX(${position}%)`,
-                                transition:
-                                    "transform 700ms cubic-bezier(0.4, 0, 0.2, 1)",
-                              }}
-                          >
-                            <img
-                                src={imageUrl}
-                                alt={`${product.name} - image ${index + 1}`}
-                                className="w-full h-full object-cover"
-                            />
-                          </div>
-                      );
-                    })}
-
+                  <div
+                      className="absolute inset-0 flex"
+                      style={{
+                        width: `${images.length * 100}%`,
+                        transform: `translateX(-${
+                            (currentImageIndex * 100) /
+                            images.length
+                        }%)`,
+                        transition:
+                            "transform 700ms cubic-bezier(0.4, 0, 0.2, 1)",
+                      }}
+                  >
+                    {images.map((image, index) => (
+                        <div
+                            key={`${image.id}-${index}`}
+                            className="relative h-full flex-shrink-0"
+                            style={{
+                              width: `${100 / images.length}%`,
+                            }}
+                        >
+                          <img
+                              src={image.imageUrl}
+                              alt={`${product.name} - image ${
+                                  index + 1
+                              }`}
+                              className="absolute inset-0 w-full h-full object-cover"
+                              draggable={false}
+                          />
+                        </div>
+                    ))}
                   </div>
 
                   {/* ==================================================
-                  PREVIOUS BUTTON
+                  LEFT BUTTON
               ================================================== */}
+
                   {images.length > 1 && (
                       <button
                           type="button"
-                          onClick={previousImage}
-                          className="
-                    absolute
-                    left-2
-                    top-1/2
-                    -translate-y-1/2
-                    z-30
-                    bg-black/60
-                    hover:bg-black/80
-                    text-white
-                    rounded-full
-                    p-2
-                    opacity-0
-                    group-hover:opacity-100
-                    transition-opacity
-                    duration-200
-                  "
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            previousImage();
+                          }}
+                          className="absolute left-2 top-1/2 -translate-y-1/2 z-50 w-9 h-9 flex items-center justify-center rounded-full bg-black/60 hover:bg-black/80 text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                           aria-label="Previous image"
                       >
                         <ChevronLeft className="w-5 h-5" />
@@ -306,28 +288,18 @@ export default function ProductCard({ product }: ProductCardProps) {
                   )}
 
                   {/* ==================================================
-                  NEXT BUTTON
+                  RIGHT BUTTON
               ================================================== */}
+
                   {images.length > 1 && (
                       <button
                           type="button"
-                          onClick={nextImage}
-                          className="
-                    absolute
-                    right-2
-                    top-1/2
-                    -translate-y-1/2
-                    z-30
-                    bg-black/60
-                    hover:bg-black/80
-                    text-white
-                    rounded-full
-                    p-2
-                    opacity-0
-                    group-hover:opacity-100
-                    transition-opacity
-                    duration-200
-                  "
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            nextImage();
+                          }}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 z-50 w-9 h-9 flex items-center justify-center rounded-full bg-black/60 hover:bg-black/80 text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                           aria-label="Next image"
                       >
                         <ChevronRight className="w-5 h-5" />
@@ -335,48 +307,48 @@ export default function ProductCard({ product }: ProductCardProps) {
                   )}
 
                   {/* ==================================================
-                  SLIDER DOTS
+                  DOTS
               ================================================== */}
+
                   {images.length > 1 && (
-                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5">
-                        {images.map((_, index) => (
+                      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5">
+                        {images.map((image, index) => (
                             <button
-                                key={index}
+                                key={image.id}
                                 type="button"
-                                onClick={() => setCurrentImageIndex(index)}
-                                aria-label={`Go to image ${index + 1}`}
-                                className={`
-                        h-2
-                        rounded-full
-                        transition-all
-                        duration-300
-                        ${
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  setCurrentImageIndex(index);
+                                }}
+                                aria-label={`Go to image ${
+                                    index + 1
+                                }`}
+                                className={`h-2 rounded-full cursor-pointer transition-all duration-300 ${
                                     index === currentImageIndex
                                         ? "w-6 bg-white"
                                         : "w-2 bg-white/60 hover:bg-white"
-                                }
-                      `}
+                                }`}
                             />
                         ))}
                       </div>
                   )}
-                </>
+                </div>
             ) : (
-                /* ====================================================
-                   NO IMAGE FALLBACK
-                ==================================================== */
                 <div className="w-full h-full flex items-center justify-center text-5xl">
-                  {product.category.toLowerCase() === "chicken"
+                  {product.category.toLowerCase() ===
+                  "chicken"
                       ? "🐔"
                       : "🐷"}
                 </div>
             )}
 
             {/* ======================================================
-              UNAVAILABLE OVERLAY
+              UNAVAILABLE
           ====================================================== */}
+
             {!isAvailable && (
-                <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-40">
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-40 pointer-events-none">
               <span className="bg-red-600 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
                 Unavailable
               </span>
@@ -384,10 +356,11 @@ export default function ProductCard({ product }: ProductCardProps) {
             )}
 
             {/* ======================================================
-              AVAILABLE BADGE
+              AVAILABLE
           ====================================================== */}
+
             {isAvailable && (
-                <span className="absolute top-3 right-3 z-40 bg-green-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                <span className="absolute top-3 right-3 z-40 bg-green-500 text-white text-xs font-bold px-2.5 py-1 rounded-full pointer-events-none">
               Available
             </span>
             )}
@@ -395,22 +368,23 @@ export default function ProductCard({ product }: ProductCardProps) {
             {/* ======================================================
               PRODUCT TYPE
           ====================================================== */}
-            <span className="absolute top-3 left-3 z-40 bg-[#1C0A00]/70 text-white text-xs px-2.5 py-1 rounded-full capitalize">
+
+            <span className="absolute top-3 left-3 z-40 bg-[#1C0A00]/70 text-white text-xs px-2.5 py-1 rounded-full capitalize pointer-events-none">
             {product.productType}
           </span>
+
           </div>
 
           {/* ======================================================
             PRODUCT INFORMATION
         ====================================================== */}
+
           <div className="p-5 flex flex-col flex-1">
 
-            {/* PRODUCT NAME */}
             <h3 className="font-display font-700 text-lg text-[#1C0A00] mb-1">
               {product.name}
             </h3>
 
-            {/* DESCRIPTION */}
             {product.description && (
                 <p className="text-gray-500 text-xs leading-relaxed mb-4">
                   {product.description}
@@ -420,14 +394,15 @@ export default function ProductCard({ product }: ProductCardProps) {
             {/* ====================================================
               VARIANTS
           ==================================================== */}
+
             {variantsLoading ? (
                 <div className="mb-4 space-y-2">
                   <div className="h-3 bg-gray-100 rounded animate-pulse w-24" />
 
                   <div className="flex gap-2">
-                    {[1, 2, 3].map((i) => (
+                    {[1, 2, 3].map((item) => (
                         <div
-                            key={i}
+                            key={item}
                             className="h-8 w-16 bg-gray-100 rounded-lg animate-pulse"
                         />
                     ))}
@@ -445,31 +420,28 @@ export default function ProductCard({ product }: ProductCardProps) {
                         <button
                             key={variant.id}
                             type="button"
-                            onClick={() => setSelectedVariantIndex(index)}
+                            onClick={() =>
+                                setSelectedVariantIndex(index)
+                            }
                             disabled={!variant.isAvailable}
-                            className={`
-                      px-3
-                      py-1.5
-                      rounded-lg
-                      text-xs
-                      font-semibold
-                      border
-                      transition-colors
-                      ${
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
                                 !variant.isAvailable
                                     ? "opacity-40 cursor-not-allowed bg-gray-50 text-gray-400 border-gray-200"
                                     : selectedVariantIndex === index
                                         ? "bg-[#9B1C1C] text-white border-[#9B1C1C]"
                                         : "bg-white text-[#1C0A00] border-gray-200 hover:border-[#9B1C1C]"
-                            }
-                    `}
+                            }`}
                         >
-                          {[variant.name, variant.weightOrSize]
+                          {[
+                            variant.name,
+                            variant.weightOrSize,
+                          ]
                               .filter(Boolean)
                               .join(" · ")}
                         </button>
                     ))}
                   </div>
+
                 </div>
             ) : product.weightOrSize ? (
                 <div className="mb-4">
@@ -482,6 +454,7 @@ export default function ProductCard({ product }: ProductCardProps) {
             {/* ====================================================
               PRICE
           ==================================================== */}
+
             {displayPrice !== null && (
                 <p className="text-[#9B1C1C] font-display font-700 text-xl mb-4">
                   ₦{displayPrice.toLocaleString()}
@@ -491,31 +464,16 @@ export default function ProductCard({ product }: ProductCardProps) {
             {/* ====================================================
               ACTION BUTTONS
           ==================================================== */}
+
             <div className="mt-auto space-y-2">
 
-              {/* ADD TO CART */}
               <button
                   type="button"
                   onClick={handleAddToCart}
-                  disabled={!isAvailable || variantsLoading}
-                  className="
-                w-full
-                bg-[#EA580C]
-                hover:bg-[#C2410C]
-                disabled:opacity-40
-                disabled:cursor-not-allowed
-                text-white
-                font-semibold
-                py-2.5
-                px-3
-                rounded-xl
-                text-sm
-                transition-colors
-                flex
-                items-center
-                justify-center
-                gap-2
-              "
+                  disabled={
+                      !isAvailable || variantsLoading
+                  }
+                  className="w-full bg-[#EA580C] hover:bg-[#C2410C] disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-2.5 px-3 rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
               >
                 <svg
                     className="w-4 h-4"
@@ -534,48 +492,23 @@ export default function ProductCard({ product }: ProductCardProps) {
                 Add to Cart
               </button>
 
-              {/* ORDER + ENQUIRE */}
               <div className="flex gap-2">
 
-                {/* ORDER NOW */}
                 <button
                     type="button"
-                    onClick={() => setShowOrderModal(true)}
+                    onClick={() =>
+                        setShowOrderModal(true)
+                    }
                     disabled={!isAvailable}
-                    className="
-                  flex-1
-                  bg-[#9B1C1C]
-                  hover:bg-[#7F1515]
-                  disabled:opacity-40
-                  disabled:cursor-not-allowed
-                  text-white
-                  font-semibold
-                  py-2.5
-                  px-3
-                  rounded-xl
-                  text-sm
-                  transition-colors
-                "
+                    className="flex-1 bg-[#9B1C1C] hover:bg-[#7F1515] disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-2.5 px-3 rounded-xl text-sm transition-colors"
                 >
                   Order Now
                 </button>
 
-                {/* ENQUIRE */}
                 <button
                     type="button"
                     onClick={handleEnquire}
-                    className="
-                  px-3
-                  py-2.5
-                  border
-                  border-gray-200
-                  hover:border-[#9B1C1C]
-                  text-gray-500
-                  hover:text-[#9B1C1C]
-                  rounded-xl
-                  text-sm
-                  transition-colors
-                "
+                    className="px-3 py-2.5 border border-gray-200 hover:border-[#9B1C1C] text-gray-500 hover:text-[#9B1C1C] rounded-xl text-sm transition-colors"
                 >
                   Enquire
                 </button>
@@ -588,13 +521,16 @@ export default function ProductCard({ product }: ProductCardProps) {
         {/* ========================================================
           ORDER MODAL
       ======================================================== */}
+
         {showOrderModal && (
             <OrderModal
                 productId={product.id}
                 productName={product.name}
                 variant={selectedVariant}
                 basePrice={product.price}
-                onClose={() => setShowOrderModal(false)}
+                onClose={() =>
+                    setShowOrderModal(false)
+                }
             />
         )}
       </>

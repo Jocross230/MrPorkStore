@@ -512,10 +512,23 @@ function ProductsTab({ onCountChange }: { onCountChange: (n: number) => void }) 
                     ))}
                   </div>
                 )}
-                <button type="button" onClick={() => varImgRef.current?.click()} className="w-full border-2 border-dashed border-gray-200 hover:border-[#9B1C1C]/40 rounded-lg px-4 py-3 text-sm text-gray-500 text-center transition-colors">
+                <label className="w-full border-2 border-dashed border-gray-200 hover:border-[#9B1C1C]/40 rounded-lg px-4 py-3 text-sm text-gray-500 text-center transition-colors cursor-pointer flex items-center justify-center">
                   📷 Upload Image
-                </button>
-                <input ref={varImgRef} type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadImage(f); }} className="hidden" />
+                  <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+
+                        if (file) {
+                          uploadImage(file);
+                        }
+
+                        e.currentTarget.value = "";
+                      }}
+                  />
+                </label>
               </div>
             </div>
           </div>

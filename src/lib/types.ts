@@ -52,6 +52,8 @@ export interface ProductImage {
   id: string;
   productId: string;
   imageUrl: string;
+  publicId?: string | null;
+  displayOrder: number;
   isPrimary: boolean;
   createdAt: string;
 }
