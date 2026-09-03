@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "../lib/api";
 import { useAppContext } from "../lib/AppContext";
 import { useCart } from "../lib/CartContext";
@@ -15,7 +16,8 @@ export default function ProductCard({ product }: ProductCardProps) {
   const [variants, setVariants] = useState<ProductVariant[]>([]);
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
   const [variantsLoading, setVariantsLoading] = useState(true);
-  const [primaryImage, setPrimaryImage] = useState<string | null>(null);
+  const [images, setImages] = useState<string[]>([]);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [showOrderModal, setShowOrderModal] = useState(false);
 
   useEffect(() => {
@@ -25,8 +27,19 @@ export default function ProductCard({ product }: ProductCardProps) {
     ])
       .then(([variantsData, imagesData]) => {
         setVariants([...variantsData].sort((a, b) => a.displayOrder - b.displayOrder));
-        const primary = imagesData.find((img) => img.isPrimary) ?? imagesData[0];
-        setPrimaryImage(primary?.imageUrl ?? null);
+        const sortedImages = [...imagesData]
+            .sort((a, b) => {
+              if (a.isPrimary && !b.isPrimary) return -1;
+              if (!a.isPrimary && b.isPrimary) return 1;
+              return 0;
+            })
+            .map((img) => img.imageUrl);
+
+        setImages(sortedImages);
+        setCurrentImageIndex(0);
+
+        setImages(sortedImages);
+        setCurrentImageIndex(0);
       })
       .catch(() => {})
       .finally(() => setVariantsLoading(false));
@@ -63,17 +76,65 @@ export default function ProductCard({ product }: ProductCardProps) {
   return (
     <>
       <div className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col border border-orange-100">
-        <div className="relative bg-orange-50 h-48 overflow-hidden">
-          {primaryImage ? (
-            <img
-              src={primaryImage}
-              alt={product.name}
-              className="w-full h-full object-cover"
-            />
+        <div className="relative bg-orange-50 h-48 overflow-hidden group">
+          {images.length > 0 ? (
+              <>
+                <img
+                    src={images[currentImageIndex]}
+                    alt={`${product.name} - image ${currentImageIndex + 1}`}
+                    className="w-full h-full object-cover transition-transform duration-500"
+                />
+
+                {images.length > 1 && (
+                    <>
+                      <button
+                          type="button"
+                          onClick={() =>
+                              setCurrentImageIndex((prev) =>
+                                  prev === 0 ? images.length - 1 : prev - 1
+                              )
+                          }
+                          className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                          aria-label="Previous image"
+                      >
+                        <ChevronLeft className="w-5 h-5" />
+                      </button>
+
+                      <button
+                          type="button"
+                          onClick={() =>
+                              setCurrentImageIndex((prev) =>
+                                  prev === images.length - 1 ? 0 : prev + 1
+                              )
+                          }
+                          className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                          aria-label="Next image"
+                      >
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
+
+                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                        {images.map((_, index) => (
+                            <button
+                                key={index}
+                                type="button"
+                                onClick={() => setCurrentImageIndex(index)}
+                                className={`w-2 h-2 rounded-full transition-all ${
+                                    index === currentImageIndex
+                                        ? "bg-white w-5"
+                                        : "bg-white/60"
+                                }`}
+                                aria-label={`Go to image ${index + 1}`}
+                            />
+                        ))}
+                      </div>
+                    </>
+                )}
+              </>
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-5xl">
-              {product.category.toLowerCase() === "chicken" ? "🐔" : "🐷"}
-            </div>
+              <div className="w-full h-full flex items-center justify-center text-5xl">
+                {product.category.toLowerCase() === "chicken" ? "🐔" : "🐷"}
+              </div>
           )}
           {!isAvailable && (
             <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
