@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useCart } from "../lib/CartContext";
-import logo from "../../public/favicon.png";
+import logo from "../assets/logo.png";
 
 type Section = "home" | "pork" | "chicken" | "sell-pig" | "airtime";
 
@@ -27,8 +27,8 @@ export default function Navbar({ currentSection, onNavigate, onAdminClick, onCar
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-16">
           <button
-            onClick={() => { onNavigate("home"); setOpen(false); }}
-            className="flex items-center gap-2 group"
+              onClick={() => { onNavigate("home"); setOpen(false); }}
+              className="flex items-center gap-2 group"
           >
             <img
                 src={logo}
@@ -36,8 +36,8 @@ export default function Navbar({ currentSection, onNavigate, onAdminClick, onCar
                 className="w-10 h-10 object-contain"
             />
             <span className="font-display font-800 text-white text-lg leading-tight">
-              Mr.Pork <span className="text-[#EA580C]">Store</span>
-            </span>
+    Mr.Pork <span className="text-[#EA580C]">Store</span>
+  </span>
           </button>
 
           <div className="hidden md:flex items-center gap-1">
