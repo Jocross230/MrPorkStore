@@ -1,6 +1,6 @@
 import { useAppContext } from "../lib/AppContext";
 import { normalizeWhatsAppNumber } from "../lib/utils";
-import logo from "../assets/logo.png";
+import logo from "../../public/favicon.png";
 
 type Section = "home" | "pork" | "chicken" | "sell-pig" | "airtime";
 

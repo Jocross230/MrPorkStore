@@ -2,7 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import './index.css'
-import logo from './assets/logo.png'
+import logo from '../public/favicon.png'
 
 const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
 
