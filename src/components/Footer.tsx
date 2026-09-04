@@ -1,5 +1,6 @@
 import { useAppContext } from "../lib/AppContext";
 import { normalizeWhatsAppNumber } from "../lib/utils";
+import logo from "../assets/logo.png";
 
 type Section = "home" | "pork" | "chicken" | "sell-pig" | "airtime";
 
@@ -24,11 +25,16 @@ export default function Footer({ onNavigate, onAdminClick }: FooterProps) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-16">
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-10 mb-12">
           <div className="lg:col-span-2">
-            <div className="flex items-center gap-2 mb-4">
-              <span className="text-3xl">🐷</span>
+            <div className="flex items-center gap-3 mb-4">
+              <img
+                  src={logo}
+                  alt="Mr.Pork Store"
+                  className="w-12 h-12 object-contain"
+              />
+
               <span className="font-display font-800 text-2xl">
-                Mr.Pork <span className="text-[#EA580C]">Store</span>
-              </span>
+    Mr.Pork <span className="text-[#EA580C]">Store</span>
+  </span>
             </div>
             <p className="text-gray-400 text-sm leading-relaxed mb-6 max-w-sm">
               Nigeria's trusted source for premium pork, fresh chicken, and affordable airtime. Farm-to-table quality with WhatsApp-powered convenience.

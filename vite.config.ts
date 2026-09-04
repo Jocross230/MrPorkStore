@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => {
   const emitSourcemaps = mode === 'development'
 
   return {
-    base: process.env.FIGMA_PUBLIC_URL ? `${process.env.FIGMA_PUBLIC_URL}/` : '/',
+    base: '/',
     build: {
       sourcemap: emitSourcemaps ? 'inline' : false,
       minify: !emitSourcemaps,
@@ -20,7 +20,6 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       tailwindcss(),
-      mrPorkFaviconPlugin(),
       figmaSiteConfiguration(siteConfiguration),
       figmaErrorOverlayReplay(),
       figmaReactRefreshBoundaryFallback(),
@@ -352,41 +351,6 @@ function figmaMakeKitPlugin(options: { storiesGlob: string | string[] }): Plugin
         } catch (err) {
           next(err as Error)
         }
-      })
-    },
-  }
-}
-/**
- * Copies the Mr.Pork Store favicon into the production build
- * as /favicon.png.
- *
- * This avoids relying on the public/ directory being served
- * correctly by the Figma/Vercel deployment pipeline.
- */
-function mrPorkFaviconPlugin(): Plugin {
-  return {
-    name: 'mr-pork-favicon',
-
-    generateBundle() {
-      const faviconPath = path.resolve(
-          __dirname,
-          './src/assets/logo.png'
-      )
-
-      if (!fs.existsSync(faviconPath)) {
-        console.warn(
-            '[mr-pork-favicon] Logo not found:',
-            faviconPath
-        )
-        return
-      }
-
-      const favicon = fs.readFileSync(faviconPath)
-
-      this.emitFile({
-        type: 'asset',
-        fileName: 'favicon.png',
-        source: favicon,
       })
     },
   }
