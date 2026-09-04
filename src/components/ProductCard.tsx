@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  X,
+  Maximize2,
+} from "lucide-react";
 import { api } from "../lib/api";
 import { useAppContext } from "../lib/AppContext";
 import { useCart } from "../lib/CartContext";
@@ -35,23 +40,33 @@ export default function ProductCard({ product }: ProductCardProps) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   /*
-   * IMPORTANT:
-   *
-   * The track contains:
+   * Carousel track:
    *
    * [LAST IMAGE] [IMAGE 1] [IMAGE 2] [IMAGE 3] [FIRST IMAGE]
    *
-   * This allows us to create a proper infinite sliding carousel.
+   * We start at index 1.
    */
   const [trackIndex, setTrackIndex] = useState(1);
 
   /*
-   * Controls whether the CSS transition is active.
-   *
-   * We temporarily disable it when jumping from a cloned image
-   * back to the real image.
+   * Controls whether carousel animation is enabled.
    */
   const [transitionEnabled, setTransitionEnabled] = useState(true);
+
+  // ============================================================
+  // IMAGE VIEWER / LIGHTBOX
+  // ============================================================
+
+  /*
+   * When true, the selected product image opens in a
+   * full-screen viewer.
+   */
+  const [showImageViewer, setShowImageViewer] = useState(false);
+
+  /*
+   * Image currently displayed inside the full-screen viewer.
+   */
+  const [viewerImageIndex, setViewerImageIndex] = useState(0);
 
   // ============================================================
   // OTHER STATE
@@ -61,9 +76,6 @@ export default function ProductCard({ product }: ProductCardProps) {
 
   /*
    * Used for swipe detection.
-   *
-   * Ref is used instead of state because changing the starting
-   * pointer position should NOT cause a React re-render.
    */
   const touchStartX = useRef<number | null>(null);
 
@@ -143,7 +155,6 @@ export default function ProductCard({ product }: ProductCardProps) {
         );
 
         setVariants(sortedVariants);
-
         setImages(sortedImages);
 
         /*
@@ -157,7 +168,9 @@ export default function ProductCard({ product }: ProductCardProps) {
          * track position 0 = cloned last image
          * track position 1 = first real image
          */
-        setTrackIndex(sortedImages.length > 1 ? 1 : 0);
+        setTrackIndex(
+            sortedImages.length > 1 ? 1 : 0
+        );
 
         setTransitionEnabled(true);
       } catch (error) {
@@ -188,14 +201,8 @@ export default function ProductCard({ product }: ProductCardProps) {
       return;
     }
 
-    /*
-     * Make sure the movement is animated.
-     */
     setTransitionEnabled(true);
 
-    /*
-     * Update the visible/dot indicator.
-     */
     setCurrentImageIndex((current) => {
       if (current >= images.length - 1) {
         return 0;
@@ -204,9 +211,6 @@ export default function ProductCard({ product }: ProductCardProps) {
       return current + 1;
     });
 
-    /*
-     * Move the actual track one slide.
-     */
     setTrackIndex((current) => current + 1);
   };
 
@@ -256,11 +260,153 @@ export default function ProductCard({ product }: ProductCardProps) {
   };
 
   // ============================================================
+  // OPEN IMAGE VIEWER
+  // ============================================================
+
+  const openImageViewer = (index: number) => {
+    if (images.length === 0) {
+      return;
+    }
+
+    setViewerImageIndex(index);
+    setShowImageViewer(true);
+
+    /*
+     * Prevent the background page from scrolling
+     * while the image viewer is open.
+     */
+    document.body.style.overflow = "hidden";
+  };
+
+  // ============================================================
+  // CLOSE IMAGE VIEWER
+  // ============================================================
+
+  const closeImageViewer = () => {
+    setShowImageViewer(false);
+
+    /*
+     * Restore normal page scrolling.
+     */
+    document.body.style.overflow = "";
+  };
+
+  // ============================================================
+  // VIEWER NEXT
+  // ============================================================
+
+  const goViewerNext = () => {
+    if (images.length <= 1) {
+      return;
+    }
+
+    setViewerImageIndex((current) => {
+      if (current >= images.length - 1) {
+        return 0;
+      }
+
+      return current + 1;
+    });
+  };
+
+  // ============================================================
+  // VIEWER PREVIOUS
+  // ============================================================
+
+  const goViewerPrevious = () => {
+    if (images.length <= 1) {
+      return;
+    }
+
+    setViewerImageIndex((current) => {
+      if (current <= 0) {
+        return images.length - 1;
+      }
+
+      return current - 1;
+    });
+  };
+
+  // ============================================================
+  // VIEWER DIRECT IMAGE
+  // ============================================================
+
+  const goViewerToImage = (index: number) => {
+    if (index < 0 || index >= images.length) {
+      return;
+    }
+
+    setViewerImageIndex(index);
+  };
+
+  // ============================================================
+  // KEYBOARD CONTROLS FOR IMAGE VIEWER
+  // ============================================================
+
+  useEffect(() => {
+    if (!showImageViewer) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      /*
+       * ESC = close
+       */
+      if (event.key === "Escape") {
+        closeImageViewer();
+      }
+
+      /*
+       * ArrowRight = next image
+       */
+      if (event.key === "ArrowRight") {
+        goViewerNext();
+      }
+
+      /*
+       * ArrowLeft = previous image
+       */
+      if (event.key === "ArrowLeft") {
+        goViewerPrevious();
+      }
+    };
+
+    window.addEventListener(
+        "keydown",
+        handleKeyDown
+    );
+
+    return () => {
+      window.removeEventListener(
+          "keydown",
+          handleKeyDown
+      );
+    };
+  }, [showImageViewer, images.length]);
+
+  // ============================================================
+  // CLEAN UP BODY SCROLL LOCK
+  // ============================================================
+
+  useEffect(() => {
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, []);
+
+  // ============================================================
   // AUTOMATIC SLIDER
   // ============================================================
 
   useEffect(() => {
-    if (images.length <= 1) {
+    /*
+     * Don't automatically slide while the image viewer
+     * is open.
+     */
+    if (
+        images.length <= 1 ||
+        showImageViewer
+    ) {
       return;
     }
 
@@ -274,7 +420,7 @@ export default function ProductCard({ product }: ProductCardProps) {
     return () => {
       window.clearInterval(interval);
     };
-  }, [images.length]);
+  }, [images.length, showImageViewer]);
 
   // ============================================================
   // INFINITE CAROUSEL RESET
@@ -292,7 +438,7 @@ export default function ProductCard({ product }: ProductCardProps) {
      *                 ^
      *              index 4
      *
-     * We just animated from real image 3 to cloned image 1.
+     * We animated from real image 3 to cloned image 1.
      *
      * Now silently jump back to real image 1.
      */
@@ -300,11 +446,6 @@ export default function ProductCard({ product }: ProductCardProps) {
       setTransitionEnabled(false);
       setTrackIndex(1);
 
-      /*
-       * Wait two animation frames before enabling the
-       * transition again. This prevents the reset itself
-       * from being visible to the user.
-       */
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           setTransitionEnabled(true);
@@ -388,6 +529,50 @@ export default function ProductCard({ product }: ProductCardProps) {
 
   const handlePointerCancel = () => {
     touchStartX.current = null;
+  };
+
+  // ============================================================
+  // IMAGE VIEWER SWIPE
+  // ============================================================
+
+  const handleViewerPointerDown = (
+      event: React.PointerEvent<HTMLDivElement>
+  ) => {
+    touchStartX.current = event.clientX;
+  };
+
+  const handleViewerPointerUp = (
+      event: React.PointerEvent<HTMLDivElement>
+  ) => {
+    if (touchStartX.current === null) {
+      return;
+    }
+
+    const distance =
+        touchStartX.current - event.clientX;
+
+    touchStartX.current = null;
+
+    /*
+     * Ignore small movements.
+     */
+    if (Math.abs(distance) < 50) {
+      return;
+    }
+
+    /*
+     * Swipe left = next.
+     */
+    if (distance > 0) {
+      goViewerNext();
+    }
+
+    /*
+     * Swipe right = previous.
+     */
+    else {
+      goViewerPrevious();
+    }
   };
 
   // ============================================================
@@ -495,10 +680,14 @@ export default function ProductCard({ product }: ProductCardProps) {
 
   return (
       <>
+        {/* ========================================================
+          PRODUCT CARD
+      ======================================================== */}
+
         <div className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col border border-orange-100">
 
           {/* ======================================================
-          IMAGE CAROUSEL
+            IMAGE CAROUSEL
         ====================================================== */}
 
           <div
@@ -510,11 +699,10 @@ export default function ProductCard({ product }: ProductCardProps) {
               onPointerUp={handlePointerUp}
               onPointerCancel={handlePointerCancel}
           >
-
             {images.length > 0 ? (
                 <>
                   {/* ==================================================
-                ACTUAL SLIDING TRACK
+                  ACTUAL SLIDING TRACK
               ================================================== */}
 
                   <div
@@ -534,29 +722,96 @@ export default function ProductCard({ product }: ProductCardProps) {
                         handleTrackTransitionEnd
                       }
                   >
-
                     {carouselImages.map(
                         (image, index) => (
                             <div
                                 key={`${image.id}-${index}`}
                                 className="relative h-full w-full flex-shrink-0"
                             >
-                              <img
-                                  src={image.imageUrl}
-                                  alt={`${product.name} - image ${
-                                      index + 1
-                                  }`}
-                                  className="block w-full h-full object-cover pointer-events-none"
-                                  draggable={false}
-                              />
+                              {/* ==================================================
+                          CLICKABLE PRODUCT IMAGE
+                      ================================================== */}
+
+                              <button
+                                  type="button"
+                                  className="absolute inset-0 w-full h-full cursor-zoom-in p-0 border-0 bg-transparent"
+                                  onPointerDown={(event) => {
+                                    event.stopPropagation();
+                                  }}
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+
+                                    /*
+                                     * Convert carousel index to real image index.
+                                     */
+                                    let realIndex =
+                                        trackIndex - 1;
+
+                                    if (
+                                        realIndex < 0
+                                    ) {
+                                      realIndex =
+                                          images.length - 1;
+                                    }
+
+                                    if (
+                                        realIndex >=
+                                        images.length
+                                    ) {
+                                      realIndex = 0;
+                                    }
+
+                                    openImageViewer(
+                                        realIndex
+                                    );
+                                  }}
+                                  aria-label={`View ${product.name} image`}
+                              >
+                                <img
+                                    src={image.imageUrl}
+                                    alt={`${product.name} - image ${
+                                        index + 1
+                                    }`}
+                                    className="block w-full h-full object-cover pointer-events-none"
+                                    draggable={false}
+                                />
+
+                                {/* ==================================================
+                            ZOOM ICON
+                        ================================================== */}
+
+                                <span
+                                    className="
+                            absolute
+                            bottom-3
+                            right-3
+                            z-20
+                            w-9
+                            h-9
+                            rounded-full
+                            bg-black/60
+                            text-white
+                            flex
+                            items-center
+                            justify-center
+                            opacity-0
+                            group-hover:opacity-100
+                            transition-opacity
+                            duration-200
+                            pointer-events-none
+                          "
+                                >
+                          <Maximize2 className="w-4 h-4" />
+                        </span>
+                              </button>
                             </div>
                         )
                     )}
-
                   </div>
 
                   {/* ==================================================
-                PREVIOUS BUTTON
+                  PREVIOUS BUTTON
               ================================================== */}
 
                   {images.length > 1 && (
@@ -596,7 +851,7 @@ export default function ProductCard({ product }: ProductCardProps) {
                   )}
 
                   {/* ==================================================
-                NEXT BUTTON
+                  NEXT BUTTON
               ================================================== */}
 
                   {images.length > 1 && (
@@ -636,7 +891,7 @@ export default function ProductCard({ product }: ProductCardProps) {
                   )}
 
                   {/* ==================================================
-                IMAGE COUNTER
+                  IMAGE COUNTER
               ================================================== */}
 
                   {images.length > 1 && (
@@ -663,7 +918,7 @@ export default function ProductCard({ product }: ProductCardProps) {
                   )}
 
                   {/* ==================================================
-                DOTS
+                  DOTS
               ================================================== */}
 
                   {images.length > 1 && (
@@ -718,7 +973,7 @@ export default function ProductCard({ product }: ProductCardProps) {
                 </>
             ) : (
                 /* ====================================================
-                  NO IMAGE FALLBACK
+                    NO IMAGE FALLBACK
                 ==================================================== */
 
                 <div className="w-full h-full flex items-center justify-center text-5xl">
@@ -730,7 +985,7 @@ export default function ProductCard({ product }: ProductCardProps) {
             )}
 
             {/* ======================================================
-            AVAILABLE BADGE
+              AVAILABLE BADGE
           ====================================================== */}
 
             {isAvailable && (
@@ -755,7 +1010,7 @@ export default function ProductCard({ product }: ProductCardProps) {
             )}
 
             {/* ======================================================
-            PRODUCT TYPE
+              PRODUCT TYPE
           ====================================================== */}
 
             <span
@@ -778,7 +1033,7 @@ export default function ProductCard({ product }: ProductCardProps) {
           </span>
 
             {/* ======================================================
-            UNAVAILABLE
+              UNAVAILABLE
           ====================================================== */}
 
             {!isAvailable && (
@@ -813,9 +1068,9 @@ export default function ProductCard({ product }: ProductCardProps) {
             )}
           </div>
 
-          {/* ======================================================
-          PRODUCT INFORMATION
-        ====================================================== */}
+          {/* ========================================================
+            PRODUCT INFORMATION
+        ======================================================== */}
 
           <div className="p-5 flex flex-col flex-1">
 
@@ -834,7 +1089,7 @@ export default function ProductCard({ product }: ProductCardProps) {
             )}
 
             {/* ====================================================
-            VARIANTS
+              VARIANTS
           ==================================================== */}
 
             {variantsLoading ? (
@@ -911,7 +1166,7 @@ export default function ProductCard({ product }: ProductCardProps) {
             ) : null}
 
             {/* ====================================================
-            PRICE
+              PRICE
           ==================================================== */}
 
             {displayPrice !== null && (
@@ -921,7 +1176,7 @@ export default function ProductCard({ product }: ProductCardProps) {
             )}
 
             {/* ====================================================
-            BUTTONS
+              BUTTONS
           ==================================================== */}
 
             <div className="mt-auto space-y-2">
@@ -1024,7 +1279,301 @@ export default function ProductCard({ product }: ProductCardProps) {
         </div>
 
         {/* ========================================================
-        ORDER MODAL
+          FULL-SCREEN IMAGE VIEWER
+      ======================================================== */}
+
+        {showImageViewer &&
+            images.length > 0 && (
+                <div
+                    className="
+              fixed
+              inset-0
+              z-[9999]
+              bg-black/95
+              flex
+              items-center
+              justify-center
+              p-4
+            "
+                    onClick={(event) => {
+                      /*
+                       * Clicking the dark background closes the viewer.
+                       */
+                      if (
+                          event.target === event.currentTarget
+                      ) {
+                        closeImageViewer();
+                      }
+                    }}
+                    onPointerDown={
+                      handleViewerPointerDown
+                    }
+                    onPointerUp={
+                      handleViewerPointerUp
+                    }
+                >
+
+                  {/* ==================================================
+                TOP BAR
+            ================================================== */}
+
+                  <div
+                      className="
+                absolute
+                top-0
+                left-0
+                right-0
+                z-50
+                flex
+                items-center
+                justify-between
+                px-4
+                py-4
+                bg-gradient-to-b
+                from-black/70
+                to-transparent
+              "
+                  >
+
+                    {/* IMAGE COUNTER */}
+
+                    <div
+                        className="
+                  text-white
+                  text-sm
+                  font-semibold
+                  bg-black/50
+                  px-3
+                  py-1.5
+                  rounded-full
+                "
+                    >
+                      {viewerImageIndex + 1} /{" "}
+                      {images.length}
+                    </div>
+
+                    {/* CLOSE */}
+
+                    <button
+                        type="button"
+                        onPointerDown={(event) => {
+                          event.stopPropagation();
+                        }}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+
+                          closeImageViewer();
+                        }}
+                        className="
+                  w-11
+                  h-11
+                  rounded-full
+                  bg-white/10
+                  hover:bg-white/20
+                  text-white
+                  flex
+                  items-center
+                  justify-center
+                  transition-colors
+                  cursor-pointer
+                "
+                        aria-label="Close image viewer"
+                    >
+                      <X className="w-6 h-6" />
+                    </button>
+                  </div>
+
+                  {/* ==================================================
+                LARGE IMAGE
+            ================================================== */}
+
+                  <div
+                      className="
+                relative
+                w-full
+                h-full
+                flex
+                items-center
+                justify-center
+                px-12
+                md:px-20
+                py-16
+              "
+                  >
+
+                    <img
+                        src={
+                          images[viewerImageIndex]
+                              .imageUrl
+                        }
+                        alt={`${product.name} - image ${
+                            viewerImageIndex + 1
+                        }`}
+                        className="
+                  max-w-full
+                  max-h-full
+                  object-contain
+                  rounded-lg
+                  select-none
+                  shadow-2xl
+                "
+                        draggable={false}
+                        onClick={(event) => {
+                          /*
+                           * Don't close viewer when clicking image.
+                           */
+                          event.stopPropagation();
+                        }}
+                    />
+
+                    {/* ==================================================
+                  VIEWER PREVIOUS
+              ================================================== */}
+
+                    {images.length > 1 && (
+                        <button
+                            type="button"
+                            onPointerDown={(event) => {
+                              event.stopPropagation();
+                            }}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+
+                              goViewerPrevious();
+                            }}
+                            className="
+                    absolute
+                    left-2
+                    md:left-6
+                    top-1/2
+                    -translate-y-1/2
+                    w-12
+                    h-12
+                    md:w-14
+                    md:h-14
+                    rounded-full
+                    bg-white/10
+                    hover:bg-white/20
+                    text-white
+                    flex
+                    items-center
+                    justify-center
+                    transition-all
+                    cursor-pointer
+                  "
+                            aria-label="Previous image"
+                        >
+                          <ChevronLeft className="w-7 h-7 md:w-8 md:h-8" />
+                        </button>
+                    )}
+
+                    {/* ==================================================
+                  VIEWER NEXT
+              ================================================== */}
+
+                    {images.length > 1 && (
+                        <button
+                            type="button"
+                            onPointerDown={(event) => {
+                              event.stopPropagation();
+                            }}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+
+                              goViewerNext();
+                            }}
+                            className="
+                    absolute
+                    right-2
+                    md:right-6
+                    top-1/2
+                    -translate-y-1/2
+                    w-12
+                    h-12
+                    md:w-14
+                    md:h-14
+                    rounded-full
+                    bg-white/10
+                    hover:bg-white/20
+                    text-white
+                    flex
+                    items-center
+                    justify-center
+                    transition-all
+                    cursor-pointer
+                  "
+                            aria-label="Next image"
+                        >
+                          <ChevronRight className="w-7 h-7 md:w-8 md:h-8" />
+                        </button>
+                    )}
+                  </div>
+
+                  {/* ==================================================
+                BOTTOM DOTS
+            ================================================== */}
+
+                  {images.length > 1 && (
+                      <div
+                          className="
+                  absolute
+                  bottom-5
+                  left-1/2
+                  -translate-x-1/2
+                  z-50
+                  flex
+                  items-center
+                  gap-2
+                  bg-black/50
+                  px-4
+                  py-2
+                  rounded-full
+                "
+                          onPointerDown={(event) => {
+                            event.stopPropagation();
+                          }}
+                      >
+                        {images.map(
+                            (image, index) => (
+                                <button
+                                    key={image.id}
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+
+                                      goViewerToImage(
+                                          index
+                                      );
+                                    }}
+                                    aria-label={`View image ${
+                                        index + 1
+                                    }`}
+                                    className={`
+                        rounded-full
+                        transition-all
+                        duration-300
+                        cursor-pointer
+                        ${
+                                        index ===
+                                        viewerImageIndex
+                                            ? "w-8 h-2 bg-white"
+                                            : "w-2 h-2 bg-white/50 hover:bg-white"
+                                    }
+                      `}
+                                />
+                            )
+                        )}
+                      </div>
+                  )}
+                </div>
+            )}
+
+        {/* ========================================================
+          ORDER MODAL
       ======================================================== */}
 
         {showOrderModal && (
